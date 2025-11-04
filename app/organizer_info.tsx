@@ -7,10 +7,11 @@ import {
   StyleSheet,
 } from 'react-native';
 import { ArrowLeft, Calendar, History } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 
 type Organizer = {
   name: string;
-  avatar?: string; // emoji or remote URL if you later add Image
+  avatar?: string;
 };
 
 type ActivityStub = {
@@ -21,14 +22,7 @@ type ActivityStub = {
   attendees: number;
 };
 
-type Props = {
-  organizer: Organizer | null;
-  onBack?: () => void;
-  onActivityClick?: (activity: ActivityStub) => void;
-  onNavigate?: (screen: string) => void; // 'activity-detail'
-};
-
-// ----- mocks kept from your web file -----
+// Mock data for organizer activities
 const mockOrganizerActivities: { upcoming: ActivityStub[]; past: ActivityStub[] } = {
   upcoming: [
     { id: 1, title: 'Morning Yoga Session', date: 'Today', time: '8:00 AM', attendees: 12 },
@@ -49,24 +43,27 @@ const mockOrganizerQualities = {
   attendeeQuality: { quality: 'Highly Engaged', emoji: '🎯', count: 8 },
 };
 
-export default function OrganizerInfoScreen({
-  organizer,
-  onBack,
-  onActivityClick,
-  onNavigate,
-}: Props) {
-  if (!organizer) return null;
+export default function OrganizerInfoScreen() {
+  const params = useLocalSearchParams();
+  const organizerName = params.organizerName as string;
+
+  const organizer: Organizer = {
+    name: organizerName || 'Unknown Organizer',
+    avatar: '👤',
+  };
 
   const handleActivityClick = (activity: ActivityStub) => {
-    onActivityClick?.(activity);
-    onNavigate?.('activity-detail');
+    router.push({
+      pathname: './activity_detail',
+      params: { eventId: activity.id.toString() }
+    });
   };
 
   return (
     <View style={styles.screen}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} android_ripple={{ color: '#e5e7eb', borderless: true }}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn}>
           <ArrowLeft size={22} color="#111827" />
         </Pressable>
         <Text style={styles.h2}>Organizer Profile</Text>
@@ -143,7 +140,7 @@ export default function OrganizerInfoScreen({
 
           <View style={{ gap: 10 }}>
             {mockOrganizerActivities.upcoming.map((a) => (
-              <Pressable key={a.id} onPress={() => handleActivityClick(a)} style={styles.card} android_ripple={{ color: '#f1f5f9' }}>
+              <Pressable key={a.id} onPress={() => handleActivityClick(a)} style={styles.card}>
                 <Text style={styles.cardTitle}>{a.title}</Text>
                 <Text style={styles.subtle}>{a.date} • {a.time}</Text>
                 <Text style={styles.meta}>{a.attendees} attendees</Text>
@@ -161,7 +158,7 @@ export default function OrganizerInfoScreen({
 
           <View style={{ gap: 10 }}>
             {mockOrganizerActivities.past.map((a) => (
-              <Pressable key={a.id} onPress={() => handleActivityClick(a)} style={styles.card} android_ripple={{ color: '#f1f5f9' }}>
+              <Pressable key={a.id} onPress={() => handleActivityClick(a)} style={styles.card}>
                 <Text style={styles.cardTitle}>{a.title}</Text>
                 <Text style={styles.subtle}>{a.date} • {a.time}</Text>
                 <Text style={styles.meta}>{a.attendees} attendees</Text>

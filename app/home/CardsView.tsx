@@ -10,21 +10,21 @@ import {
   Pressable,
 } from 'react-native';
 import { router } from 'expo-router';
-import { mockEvents } from '../../../lib/events';
+import { mockEvents } from '../../lib/events';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CardsView() {
   const handleEventClick = (eventId: number | string) => {
     router.push({
-      pathname: './activity_detail',
+      pathname: '../activity_detail',
       params: { eventId: eventId.toString() }
     });
   };
 
   const handleOrganizerClick = (organizerName: string) => {
     router.push({
-      pathname: './organizer_info',
+      pathname: '../organizer_info',
       params: { organizerName }
     });
   };

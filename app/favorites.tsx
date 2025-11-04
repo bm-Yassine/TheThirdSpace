@@ -7,7 +7,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  Pressable,
 } from 'react-native';
+import { router } from 'expo-router';
 import { mockEvents } from '../lib/events';
 import { Event } from '../lib/types';
 import FloatingNavigation from '../components/FloatingNavigation';
@@ -16,8 +18,25 @@ export default function FavoritesScreen() {
   // Filter to show only favorited events
   const favoriteEvents = mockEvents.filter((event) => event.isFavorite);
 
+  const handleEventClick = (eventId: number | string) => {
+    router.push({
+      pathname: './activity_detail',
+      params: { eventId: eventId.toString() }
+    });
+  };
+
+  const handleOrganizerClick = (organizerName: string) => {
+    router.push({
+      pathname: './organizer_info',
+      params: { organizerName }
+    });
+  };
+
   const renderEvent = ({ item }: { item: Event }) => (
-    <TouchableOpacity style={styles.eventCard}>
+    <Pressable 
+      style={styles.eventCard}
+      onPress={() => handleEventClick(item.id)}
+    >
       <Image
         source={{ uri: item.imageUrl }}
         style={styles.eventImage}
@@ -25,7 +44,15 @@ export default function FavoritesScreen() {
       />
       <View style={styles.eventContent}>
         <Text style={styles.eventTitle}>{item.title}</Text>
-        <Text style={styles.eventOrganizer}>by {item.organizer.name}</Text>
+        
+        {/* Make organizer name clickable */}
+        <Pressable onPress={(e) => {
+          e.stopPropagation();
+          handleOrganizerClick(item.organizer.name);
+        }}>
+          <Text style={styles.eventOrganizer}>by {item.organizer.name}</Text>
+        </Pressable>
+        
         <Text style={styles.eventDetails}>
           {item.date} • {item.time}
         </Text>
@@ -43,7 +70,7 @@ export default function FavoritesScreen() {
           <Text style={styles.free}>Free</Text>
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 
   return (

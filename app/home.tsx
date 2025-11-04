@@ -7,9 +7,9 @@ import {
   Platform,
 } from 'react-native';
 import FloatingNavigation from '../components/FloatingNavigation';
-import DiscoverView from './home/views/DiscoverView';
-import CardsView from './home/views/CardsView';
-import MapView from './home/views/MapView';
+import DiscoverView from './home/DiscoverView';
+import CardsView from './home/CardsView';
+import MapView from './home/MapView';
 
 type ViewMode = 'discover' | 'cards' | 'map';
 

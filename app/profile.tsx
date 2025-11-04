@@ -306,7 +306,7 @@ export default function ProfileScreen({ onNavigate, onEventRatingClick }: Props)
           </View>
 
           {/* Waitlist (upcoming) */}
-          {event.status === 'upcoming' && event.waitlist?.length > 0 && (
+          {event.status === 'upcoming' && event.waitlist && event.waitlist.length > 0 && (
             <View style={{ marginTop: 8 }}>
               <Text style={styles.subHead}>Waiting for Approval</Text>
               <View style={{ gap: 8, marginTop: 6 }}>
@@ -361,16 +361,16 @@ export default function ProfileScreen({ onNavigate, onEventRatingClick }: Props)
                             onPress={() => handleEventClick(event, 'organizer')}
                             style={[
                               styles.pillBtn,
-                              a.rated ? styles.pillRated : styles.pillRate,
+                              'rated' in a && a.rated ? styles.pillRated : styles.pillRate,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.pillText,
-                                a.rated ? styles.pillTextRated : styles.pillTextRate,
+                                'rated' in a && a.rated ? styles.pillTextRated : styles.pillTextRate,
                               ]}
                             >
-                              {a.rated ? 'Rated' : 'Rate'}
+                              {'rated' in a && a.rated ? 'Rated' : 'Rate'}
                             </Text>
                           </Pressable>
                         ) : (

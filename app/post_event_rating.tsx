@@ -271,4 +271,57 @@ const styles = StyleSheet.create({
   h2: { fontSize: 16, fontWeight: '600', color: '#111827', textAlign: 'center', marginTop: 6 },
   mutedCenter: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginTop: 6 },
   subtleCenter: { fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 6 },
-  subtle: { fo
+  subtle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+
+  progressWrap: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8, backgroundColor: '#f9fafb' },
+  progressTopRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  progressLabel: { fontSize: 12, color: '#6b7280' },
+  progressTrack: { width: '100%', height: 8, borderRadius: 999, backgroundColor: '#e5e7eb', overflow: 'hidden' },
+  progressBar: { height: '100%', borderRadius: 999, backgroundColor: '#111827' },
+
+  personWrap: { alignItems: 'center', marginBottom: 12 },
+  avatar: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: '#f3f4f6',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  roleRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  roleText: { fontSize: 13, color: '#6b7280' },
+
+  promptTitle: { textAlign: 'center', fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 4 },
+  promptSub: { textAlign: 'center', fontSize: 12, color: '#6b7280' },
+
+  optionCard: {
+    borderWidth: 1, borderRadius: 12, padding: 12,
+  },
+  optionCardIdle: { borderColor: '#e5e7eb', backgroundColor: '#ffffff' },
+  optionCardSelected: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
+  optionRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  optionEmoji: { fontSize: 22 },
+  optionTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
+  optionDesc: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+
+  actions: {
+    padding: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e5e7eb',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  btn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, borderRadius: 12,
+  },
+  btnOutline: { borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#ffffff' },
+  btnPrimary: { backgroundColor: '#111827' },
+  btnDisabled: { backgroundColor: '#e5e7eb' },
+
+  btnText: { fontSize: 15, fontWeight: '700' },
+  btnTextOutline: { color: '#111827' },
+  btnTextPrimary: { color: '#ffffff' },
+  btnTextDisabled: { color: '#6b7280' },
+
+  doneIconWrap: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: '#dcfce7', alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
+});

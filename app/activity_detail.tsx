@@ -15,6 +15,9 @@ import {
   AlertCircle,
   CheckCircle,
 } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { mockEvents } from '../lib/events';
+import type { Event } from '../lib/types';
 
 type Organizer = { name: string; avatar?: string };
 type CommitmentStatus = 'pending' | 'approved' | null;
@@ -30,31 +33,45 @@ export type Activity = {
   cost: number;
   isFavorite?: boolean;
   isCommitted?: boolean;
-  commitmentStatus?: CommitmentStatus; // 'pending' or 'approved'
+  commitmentStatus?: CommitmentStatus;
   requiresApproval?: boolean;
   organizer?: Organizer;
   tags?: string[];
 };
 
-type Props = {
-  activity: Activity | null;
-  onBack?: () => void;
-  onOrganizerClick?: (org: Organizer) => void;
-  onNavigate?: (screen: string) => void; // 'organizer-info'
-  onCommitToActivity?: (activity: Activity) => void; // e.g., open PaymentSheet or trigger commit
-};
+export default function ActivityDetailScreen() {
+  const params = useLocalSearchParams();
+  const eventId = params.eventId as string;
+  
+  // Find the event from mockEvents
+  const foundEvent = mockEvents.find((e: Event) => e.id.toString() === eventId);
+  const activity: Activity | null = foundEvent ? {
+    id: foundEvent.id,
+    title: foundEvent.title,
+    date: foundEvent.date || '',
+    time: foundEvent.time || '',
+    location: foundEvent.location || '',
+    attendees: foundEvent.attendees || 0,
+    maxAttendees: foundEvent.maxAttendees || 0,
+    cost: foundEvent.cost || 0,
+    isFavorite: false,
+    isCommitted: false,
+    commitmentStatus: null,
+    requiresApproval: false,
+    organizer: foundEvent.organizer,
+    tags: foundEvent.tags,
+  } : null;
 
-export default function ActivityDetailScreen({
-  activity,
-  onBack,
-  onOrganizerClick,
-  onNavigate,
-  onCommitToActivity,
-}: Props) {
   const [isFavorite, setIsFavorite] = useState<boolean>(!!activity?.isFavorite);
-  const [currentActivity, setCurrentActivity] = useState<Activity | null>(activity || null);
+  const [currentActivity, setCurrentActivity] = useState<Activity | null>(activity);
 
-  if (!currentActivity) return null;
+  if (!currentActivity) {
+    return (
+      <View style={styles.screen}>
+        <Text style={styles.title}>Event not found</Text>
+      </View>
+    );
+  }
 
   const organizer: Organizer = useMemo(
     () => currentActivity.organizer || { name: 'Unknown Organizer', avatar: '👤' },
@@ -63,8 +80,10 @@ export default function ActivityDetailScreen({
 
   const handleOrganizerClick = () => {
     if (currentActivity.organizer) {
-      onOrganizerClick?.(currentActivity.organizer);
-      onNavigate?.('organizer-info');
+      router.push({
+        pathname: './organizer_info',
+        params: { organizerName: currentActivity.organizer.name }
+      });
     }
   };
 
@@ -121,28 +140,33 @@ export default function ActivityDetailScreen({
   const handleCommitClick = () => {
     if (currentActivity.isCommitted) {
       if (currentActivity.commitmentStatus === 'pending' && currentActivity.cost === 0) {
-        // cancel pending (free)
         setCurrentActivity({ ...currentActivity, isCommitted: false, commitmentStatus: null });
         return;
       }
       if (currentActivity.commitmentStatus === 'approved') {
-        // cancel approved
         setCurrentActivity({ ...currentActivity, isCommitted: false, commitmentStatus: null });
         return;
       }
       if (currentActivity.cost > 0 && currentActivity.commitmentStatus === 'pending') {
-        // complete payment
-        onCommitToActivity?.(currentActivity);
+        router.push({
+          pathname: './payment',
+          params: { eventId: currentActivity.id, amount: currentActivity.cost }
+        });
         return;
       }
     }
 
-    // new commitment
     if (currentActivity.cost > 0 && !currentActivity.isCommitted) {
-      onCommitToActivity?.(currentActivity); // e.g., open your PaymentScreen modal
+      router.push({
+        pathname: './payment',
+        params: { eventId: currentActivity.id, amount: currentActivity.cost }
+      });
     } else {
-      // free event path (could set pending/approved based on requiresApproval or capacity)
-      setCurrentActivity({ ...currentActivity, isCommitted: true, commitmentStatus: currentActivity.requiresApproval ? 'pending' : 'approved' });
+      setCurrentActivity({ 
+        ...currentActivity, 
+        isCommitted: true, 
+        commitmentStatus: currentActivity.requiresApproval ? 'pending' : 'approved' 
+      });
     }
   };
 
@@ -178,7 +202,7 @@ export default function ActivityDetailScreen({
     <View style={styles.screen}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} android_ripple={{ color: '#e5e7eb', borderless: true }}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn}>
           <ArrowLeft size={22} color="#111827" />
         </Pressable>
 
@@ -186,7 +210,6 @@ export default function ActivityDetailScreen({
           <Pressable
             onPress={() => setIsFavorite((v) => !v)}
             style={[styles.iconBtn, isFavorite ? styles.heartActive : styles.heartIdle]}
-            android_ripple={{ color: '#fecaca' }}
           >
             <Heart size={20} color={isFavorite ? '#dc2626' : '#9ca3af'} fill={isFavorite ? '#dc2626' : 'none'} />
           </Pressable>
@@ -194,28 +217,25 @@ export default function ActivityDetailScreen({
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
-        {/* Title */}
         <Text style={styles.title} numberOfLines={2}>{currentActivity.title}</Text>
 
-        {/* Commitment banner */}
         {banner && (
           <View style={[styles.bannerBase, banner.style]}>
-            <banner.Icon size={20} color={banner === null ? '#6b7280' : '#111827'} />
+            <banner.Icon size={20} color="#111827" />
             <View style={{ flex: 1 }}>
               <Text style={styles.bannerTitle}>{banner.title}</Text>
               <Text style={styles.bannerDesc}>{banner.desc}</Text>
             </View>
             {banner.canCancel && (
-              <Pressable onPress={handleCommitClick} style={styles.bannerCancel} android_ripple={{ color: '#ffffff55' }}>
+              <Pressable onPress={handleCommitClick} style={styles.bannerCancel}>
                 <Text style={styles.bannerCancelText}>Cancel</Text>
               </Pressable>
             )}
           </View>
         )}
 
-        {/* Organizer */}
         {currentActivity.organizer && (
-          <Pressable onPress={handleOrganizerClick} style={styles.orgRow} android_ripple={{ color: '#f1f5f9' }}>
+          <Pressable onPress={handleOrganizerClick} style={styles.orgRow}>
             <View style={styles.orgAvatar}>
               <Text style={{ fontSize: 20 }}>{organizer.avatar || '👤'}</Text>
             </View>
@@ -226,7 +246,6 @@ export default function ActivityDetailScreen({
           </Pressable>
         )}
 
-        {/* Description */}
         <View style={{ marginBottom: 14 }}>
           <Text style={styles.h4}>Description</Text>
           <Text style={styles.body}>
@@ -235,7 +254,6 @@ export default function ActivityDetailScreen({
           </Text>
         </View>
 
-        {/* Details */}
         <View style={{ gap: 12, marginBottom: 16 }}>
           <View style={styles.detailRow}>
             <Calendar size={18} color="#6b7280" />
@@ -275,7 +293,6 @@ export default function ActivityDetailScreen({
           </View>
         </View>
 
-        {/* Important Info */}
         {(currentActivity.cost > 0 || currentActivity.attendees >= currentActivity.maxAttendees) && (
           <View style={styles.infoBox}>
             <Text style={styles.h5}>Important Information</Text>
@@ -286,7 +303,6 @@ export default function ActivityDetailScreen({
           </View>
         )}
 
-        {/* Tags */}
         {!!currentActivity.tags?.length && (
           <View style={{ marginBottom: 16 }}>
             <Text style={styles.h4}>Tags</Text>
@@ -300,8 +316,7 @@ export default function ActivityDetailScreen({
           </View>
         )}
 
-        {/* Action */}
-        <Pressable onPress={handleCommitClick} style={[styles.btn, getActionButtonStyle()]} android_ripple={{ color: '#ffffff22' }}>
+        <Pressable onPress={handleCommitClick} style={[styles.btn, getActionButtonStyle()]}>
           <Text style={styles.btnText}>{getActionButtonText()}</Text>
         </Pressable>
       </ScrollView>
@@ -322,7 +337,6 @@ const styles = StyleSheet.create({
 
   title: { textAlign: 'center', fontSize: 20, fontWeight: '700', color: '#111827', marginVertical: 12 },
 
-  // Banner styles
   bannerBase: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
@@ -336,7 +350,6 @@ const styles = StyleSheet.create({
   bannerBlue: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
   bannerGreen: { backgroundColor: '#dcfce7', borderColor: '#bbf7d0' },
 
-  // Organizer
   orgRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 10, borderRadius: 10, marginBottom: 12,
@@ -344,25 +357,22 @@ const styles = StyleSheet.create({
   orgAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center' },
   orgName: { fontSize: 15, fontWeight: '600', color: '#111827' },
 
-  // Text blocks
   h4: { fontSize: 15, fontWeight: '600', color: '#111827', marginBottom: 6 },
   h5: { fontSize: 14, fontWeight: '600', color: '#111827' },
   body: { fontSize: 13, color: '#374151', lineHeight: 18 },
 
-  // Details
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   detailTitle: { fontSize: 13, color: '#111827', fontWeight: '600' },
   coinBox: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  subtle: { fontSize: 12, color: '#6b7280' },
 
-  // Info
   infoBox: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 12, marginBottom: 16 },
+  infoText: { fontSize: 12, color: '#374151', lineHeight: 18 },
 
-  // Tags
   tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { backgroundColor: '#f3f4f6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
   tagText: { fontSize: 12, color: '#374151' },
 
-  // Button
   btn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   btnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   btnBlack: { backgroundColor: '#111827' },

@@ -5,7 +5,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
-import { mockEvents } from '../../../lib/events';
+import { mockEvents } from '../../lib/events';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
