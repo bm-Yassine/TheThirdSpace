@@ -87,11 +87,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-    paddingTop: Platform.OS === 'ios' ? 50 : 30,
   },
   viewSwitcher: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 70 : 50,
+    top: Platform.OS === 'ios' ? 90 : 70,
     right: 16,
     gap: 12,
     zIndex: 10,

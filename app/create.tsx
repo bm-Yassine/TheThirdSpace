@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,15 @@ import {
   Switch,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
+import { dataService, authService, type UserProfile } from '../Backend/firebase';
 
 export default function CreateEventScreen() {
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState<{
     title: string;
     type: string;
@@ -41,6 +45,37 @@ export default function CreateEventScreen() {
   });
 
   const [newTag, setNewTag] = useState('');
+
+  // Check authentication and load user profile
+  useEffect(() => {
+    const checkAuth = async () => {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        Alert.alert('Authentication Required', 'Please sign in to create an event.', [
+          { text: 'OK', onPress: () => router.replace('/login') }
+        ]);
+        return;
+      }
+
+      try {
+        const profile = await dataService.getCurrentUserProfile();
+        if (!profile) {
+          Alert.alert('Error', 'Unable to load user profile. Please try again.');
+          router.back();
+          return;
+        }
+        setUserProfile(profile);
+      } catch (error) {
+        console.error('Error loading profile:', error);
+        Alert.alert('Error', 'Failed to load your profile. Please try again.');
+        router.back();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   const activityTypes = [
     'Sports',
@@ -79,16 +114,65 @@ export default function CreateEventScreen() {
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!userProfile) {
+      Alert.alert('Error', 'Unable to create event. Please try again.');
+      return;
+    }
+
     if (formData.tags.length < 3) {
       Alert.alert('Error', 'Please add at least 3 tags');
       return;
     }
-    
-    Alert.alert('Success', 'Event created!', [
-      { text: 'OK', onPress: () => router.push('/home') }
-    ]);
+
+    if (!formData.title || !formData.description || !formData.location || !formData.time) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const eventData = {
+        title: formData.title,
+        description: formData.description,
+        location: formData.location,
+        time: formData.time,
+        date: new Date().toLocaleDateString(), // You might want to add a date picker
+        tags: formData.tags,
+        cost: formData.cost ? parseFloat(formData.cost.replace('$', '')) || 0 : 0,
+        requiresApproval: !formData.openToAll,
+        maxAttendees: parseInt(formData.maxPeople) || undefined,
+        minAttendees: parseInt(formData.minPeople) || undefined,
+        attendees: 0,
+        organizer: { 
+          uid: userProfile.uid,
+          name: userProfile.displayName,
+          photoURL: userProfile.photoURL,
+        },
+        imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop', // Default image
+      };
+
+      await dataService.createEvent(eventData);
+
+      Alert.alert('Success', 'Event created successfully!', [
+        { text: 'OK', onPress: () => router.push('/home') }
+      ]);
+    } catch (error) {
+      console.error('Error creating event:', error);
+      Alert.alert('Error', 'Failed to create event. Please try again.');
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#6366F1" />
+      </View>
+    );
+  }
+
+  if (!userProfile) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>

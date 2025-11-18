@@ -1,17 +1,28 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { ArrowLeft, Calendar, History } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { dataService, type UserProfile } from '../Backend/firebase';
 
 type Organizer = {
+  uid?: string;
   name: string;
   avatar?: string;
+  email?: string;
+  bio?: string;
+  stats?: {
+    eventsJoined?: number;
+    eventsCreated?: number;
+    rating?: number;
+  };
 };
 
 type ActivityStub = {
@@ -45,11 +56,43 @@ const mockOrganizerQualities = {
 
 export default function OrganizerInfoScreen() {
   const params = useLocalSearchParams();
+  const organizerUid = params.organizerUid as string;
   const organizerName = params.organizerName as string;
-
-  const organizer: Organizer = {
+  
+  const [organizer, setOrganizer] = useState<Organizer>({
     name: organizerName || 'Unknown Organizer',
     avatar: '👤',
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadOrganizerProfile();
+  }, [organizerUid]);
+
+  const loadOrganizerProfile = async () => {
+    if (!organizerUid) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const profile = await dataService.getUserProfile(organizerUid);
+      if (profile) {
+        setOrganizer({
+          uid: profile.uid,
+          name: profile.displayName || 'Unknown Organizer',
+          avatar: profile.photoURL ? '👤' : '👤',
+          email: profile.email,
+          bio: profile.bio || 'Hi! I\'m an event organizer passionate about bringing people together for amazing experiences.',
+          stats: profile.stats,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading organizer profile:', error);
+      Alert.alert('Error', 'Failed to load organizer profile.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleActivityClick = (activity: ActivityStub) => {
@@ -58,6 +101,14 @@ export default function OrganizerInfoScreen() {
       params: { eventId: activity.id.toString() }
     });
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#6366F1" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -84,24 +135,28 @@ export default function OrganizerInfoScreen() {
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>24</Text>
+              <Text style={styles.statValue}>{organizer.stats?.eventsCreated || 0}</Text>
               <Text style={styles.statLabel}>Events</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>156</Text>
-              <Text style={styles.statLabel}>Attendees</Text>
+              <Text style={styles.statValue}>{organizer.stats?.eventsJoined || 0}</Text>
+              <Text style={styles.statLabel}>Participated</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{organizer.stats?.rating || 0}</Text>
+              <Text style={styles.statLabel}>Rating</Text>
             </View>
           </View>
 
           {/* Bio */}
-          <View style={{ marginTop: 8 }}>
-            <Text style={styles.h4}>About</Text>
-            <Text style={styles.body}>
-              Hi! I'm Sarah, a certified yoga instructor with over 5 years of experience. I love bringing
-              people together for mindful movement and creating inclusive spaces where everyone feels
-              welcome. When I'm not teaching, you can find me hiking or trying new coffee shops around the city.
-            </Text>
-          </View>
+          {organizer.bio && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={styles.h4}>About</Text>
+              <Text style={styles.body}>
+                {organizer.bio}
+              </Text>
+            </View>
+          )}
 
           {/* Qualities */}
           <View style={{ marginTop: 12 }}>

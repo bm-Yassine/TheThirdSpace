@@ -1,42 +1,97 @@
 // screens/LoginScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
+  View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image,
 } from 'react-native';
-import { auth } from '../Backend/firebase';
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-} from 'firebase/auth';
+import { router } from 'expo-router';
+import { authService, auth } from '../Backend/firebase';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Google Auth setup - REPLACE WITH YOUR REAL CLIENT IDs
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: '258758943296-abcdefghijklmnop.apps.googleusercontent.com', // Replace with your Android client ID
+    iosClientId: '258758943296-abcdefghijklmnop.apps.googleusercontent.com', // Replace with your iOS client ID
+    webClientId: '258758943296-p4o6gvj7l0f178o8tcf7549qkkiggif1.apps.googleusercontent.com', // Replace with your Web client ID
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      const credential = GoogleAuthProvider.credential(id_token);
+      signInWithCredential(auth, credential)
+        .then(async (userCredential) => {
+          // Check if user profile exists, if not create one
+          const { dataService } = await import('../Backend/firebase');
+          const profile = await dataService.getUserProfile(userCredential.user.uid);
+          
+          if (!profile) {
+            // Create profile for new Google user
+            await dataService.createUserProfile(userCredential.user.uid, {
+              email: userCredential.user.email || '',
+              displayName: userCredential.user.displayName || 'User',
+              photoURL: userCredential.user.photoURL,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+          }
+          
+          router.replace('/home');
+        })
+        .catch((error) => {
+          setErr('Google sign-in failed. Please try again.');
+        });
+    }
+  }, [response]);
 
   const toggle = () => {
     setMode((m) => (m === 'login' ? 'signup' : 'login'));
     setErr(null);
+    setDisplayName('');
   };
 
   const submit = async () => {
+    if (!email || !password) {
+      setErr('Please fill in all fields');
+      return;
+    }
+
+    if (mode === 'signup' && !displayName.trim()) {
+      setErr('Please enter your name');
+      return;
+    }
+
     setBusy(true);
     setErr(null);
     try {
       if (mode === 'login') {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
+        await authService.signIn(email.trim(), password);
       } else {
-        await createUserWithEmailAndPassword(auth, email.trim(), password);
+        await authService.signUp(email.trim(), password, displayName.trim());
       }
-      onSuccess?.();
+      router.replace('/home');
     } catch (e: any) {
-      setErr(mapAuthError(e?.code) || 'Something went wrong.');
+      console.log('Auth error:', e); // Debug log
+      const errorMessage = mapAuthError(e?.code) || `Authentication failed: ${e?.message || 'Unknown error'}`;
+      setErr(errorMessage);
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleGoogleSignIn = () => {
+    promptAsync();
   };
 
   const forgot = async () => {
@@ -44,7 +99,7 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
     setBusy(true);
     setErr(null);
     try {
-      await sendPasswordResetEmail(auth, email.trim());
+      await authService.resetPassword(email.trim());
       setErr('Password reset email sent.');
     } catch (e: any) {
       setErr(mapAuthError(e?.code) || 'Could not send reset email.');
@@ -54,51 +109,117 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.screen}
+    <KeyboardAvoidingView style={styles.container}
       behavior={Platform.select({ ios: 'padding', android: undefined })}>
-      <View style={styles.card}>
-        <Text style={styles.h1}>{mode === 'login' ? 'Welcome back' : 'Create account'}</Text>
-        <Text style={styles.subtle}>
-          {mode === 'login' ? 'Sign in to continue' : 'Join and start discovering events'}
-        </Text>
+      <View style={styles.background}>
+        <View style={styles.logoContainer}>
+          <View style={styles.logo}>
+            <Text style={styles.logoText}>🎉</Text>
+          </View>
+          <Text style={styles.appName}>The Third Space</Text>
+          <Text style={styles.tagline}>Discover Amazing Events</Text>
+        </View>
 
-        <View style={{ height: 12 }} />
+        <View style={styles.card}>
+          <Text style={styles.title}>{mode === 'login' ? 'Welcome Back!' : 'Join the Community'}</Text>
+          <Text style={styles.subtitle}>
+            {mode === 'login' ? 'Sign in to discover events near you' : 'Create your account and start exploring'}
+          </Text>
 
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholder="you@example.com"
-          style={styles.input}
-        />
+          {/* Google Sign In Button */}
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={handleGoogleSignIn}
+            disabled={!request}
+          >
+            <Image
+              source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+              style={styles.googleIcon}
+            />
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
 
-        <View style={{ height: 10 }} />
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholder="••••••••"
-          style={styles.input}
-        />
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
-        {!!err && <Text style={styles.error}>{err}</Text>}
+          <View style={styles.form}>
+            {mode === 'signup' && (
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Name</Text>
+                <TextInput
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  autoCapitalize="words"
+                  placeholder="Enter your name"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.input}
+                />
+              </View>
+            )}
 
-        <Pressable onPress={submit} style={[styles.btn, styles.btnPrimary]} disabled={busy}>
-          {busy ? <ActivityIndicator /> : <Text style={styles.btnText}>
-            {mode === 'login' ? 'Sign in' : 'Sign up'}
-          </Text>}
-        </Pressable>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="Enter your email"
+                placeholderTextColor="#9CA3AF"
+                style={styles.input}
+              />
+            </View>
 
-        <View style={styles.rowBetween}>
-          <Pressable onPress={forgot}><Text style={styles.link}>Forgot password?</Text></Pressable>
-          <Pressable onPress={toggle}>
-            <Text style={styles.link}>
-              {mode === 'login' ? "New here? Create account" : 'Have an account? Sign in'}
-            </Text>
-          </Pressable>
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholder="Enter your password"
+                placeholderTextColor="#9CA3AF"
+                style={styles.input}
+              />
+            </View>
+
+            {!!err && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.error}>{err}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.primaryButton, busy && styles.buttonDisabled]}
+              onPress={submit}
+              disabled={busy}
+            >
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  {mode === 'login' ? 'Sign In' : 'Create Account'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {mode === 'login' && (
+              <TouchableOpacity style={styles.forgotButton} onPress={forgot}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.switchModeButton} onPress={toggle}>
+              <Text style={styles.switchModeText}>
+                {mode === 'login'
+                  ? "Don't have an account? Sign up"
+                  : 'Already have an account? Sign in'
+                }
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -118,16 +239,189 @@ function mapAuthError(code?: string): string | null {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  card: { width: '100%', maxWidth: 420, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 14, padding: 16, backgroundColor: '#fff' },
-  h1: { fontSize: 20, fontWeight: '700', color: '#111827' },
-  subtle: { fontSize: 12, color: '#6b7280', marginTop: 4 },
-  label: { fontSize: 13, color: '#111827', marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  btn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
-  btnPrimary: { backgroundColor: '#111827' },
-  btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
-  link: { color: '#2563eb', fontSize: 12 },
-  error: { color: '#dc2626', marginTop: 10, fontSize: 12 },
+  container: {
+    flex: 1,
+    backgroundColor: '#6366F1',
+  },
+  background: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  logoText: {
+    fontSize: 40,
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  tagline: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 12,
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    paddingHorizontal: 16,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  form: {
+    width: '100%',
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    backgroundColor: '#F9FAFB',
+    color: '#111827',
+  },
+  errorContainer: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  error: {
+    color: '#DC2626',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  primaryButton: {
+    backgroundColor: '#6366F1',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#6366F1',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  buttonDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  forgotButton: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  forgotText: {
+    color: '#6366F1',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  switchModeButton: {
+    alignItems: 'center',
+  },
+  switchModeText: {
+    color: '#6B7280',
+    fontSize: 14,
+  },
 });

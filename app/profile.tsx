@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   Settings,
@@ -18,21 +20,9 @@ import {
   MapPin,
   ChevronRight,
 } from 'lucide-react-native';
-
-// ---------- Mock data (kept from your web file) ----------
-const userData = {
-  name: 'John Doe',
-  email: 'john.doe@email.com',
-  avatar: '👤',
-  stats: { eventsJoined: 12, eventsCreated: 3, rating: 4.9 },
-  interests: ['Photography', 'Yoga', 'Reading', 'Technology', 'Art'],
-  organizerQualities: [
-    { quality: 'Super Organized', emoji: '📋', count: 8 },
-    { quality: 'Very Welcoming', emoji: '🤗', count: 6 },
-    { quality: 'High Energy', emoji: '⚡', count: 5 },
-  ],
-  attendeeQuality: { quality: 'Highly Engaged', emoji: '🎯', count: 7 },
-};
+import { router } from 'expo-router';
+import FloatingNavigation from '../components/FloatingNavigation';
+import { authService, dataService, type UserProfile } from '../Backend/firebase';
 
 const createdEvents = [
   {
@@ -126,13 +116,94 @@ export default function ProfileScreen({ onNavigate, onEventRatingClick }: Props)
   const [activeTab, setActiveTab] = useState<'overview' | 'created' | 'attended'>(
     'overview'
   );
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState({
+    name: 'User',
+    email: '',
+    avatar: '👤',
+    stats: { eventsJoined: 0, eventsCreated: 0, rating: 0 },
+    interests: [] as string[],
+    organizerQualities: [
+      { quality: 'Super Organized', emoji: '📋', count: 8 },
+      { quality: 'Very Welcoming', emoji: '🤗', count: 6 },
+      { quality: 'High Energy', emoji: '⚡', count: 5 },
+    ],
+    attendeeQuality: { quality: 'Highly Engaged', emoji: '🎯', count: 7 },
+  });
+
+  useEffect(() => {
+    loadUserProfile();
+  }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        Alert.alert('Authentication Required', 'Please sign in to view your profile.', [
+          { text: 'OK', onPress: () => router.replace('/login') }
+        ]);
+        return;
+      }
+
+      const profile = await dataService.getCurrentUserProfile();
+      if (profile) {
+        setUserProfile(profile);
+        setUserData({
+          name: profile.displayName || 'User',
+          email: profile.email,
+          avatar: profile.photoURL ? '👤' : '👤', // You can update this to use actual images
+          stats: {
+            eventsJoined: profile.stats?.eventsJoined || 0,
+            eventsCreated: profile.stats?.eventsCreated || 0,
+            rating: profile.stats?.rating || 0,
+          },
+          interests: profile.interests || [],
+          organizerQualities: [
+            { quality: 'Super Organized', emoji: '📋', count: 8 },
+            { quality: 'Very Welcoming', emoji: '🤗', count: 6 },
+            { quality: 'High Energy', emoji: '⚡', count: 5 },
+          ],
+          attendeeQuality: { quality: 'Highly Engaged', emoji: '🎯', count: 7 },
+        });
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      Alert.alert('Error', 'Failed to load profile data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await authService.signOut();
+              router.replace('/login');
+            } catch (error) {
+              console.error('Error logging out:', error);
+              Alert.alert('Error', 'Failed to log out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const menuItems = [
-    { icon: Edit, label: 'Edit Profile', action: () => {} },
-    { icon: Bell, label: 'Notifications', action: () => {} },
-    { icon: Settings, label: 'Settings', action: () => {} },
-    { icon: HelpCircle, label: 'Help & Support', action: () => {} },
-    { icon: LogOut, label: 'Log Out', action: () => {}, danger: true },
+    { icon: Edit, label: 'Edit Profile', action: () => Alert.alert('Coming Soon', 'Edit profile feature will be available soon.') },
+    { icon: Bell, label: 'Notifications', action: () => Alert.alert('Coming Soon', 'Notifications feature will be available soon.') },
+    { icon: Settings, label: 'Settings', action: () => Alert.alert('Coming Soon', 'Settings will be available soon.') },
+    { icon: HelpCircle, label: 'Help & Support', action: () => Alert.alert('Coming Soon', 'Help & Support will be available soon.') },
+    { icon: LogOut, label: 'Log Out', action: handleLogout, danger: true },
   ];
 
   const handleEventClick = (event: any, userRole: 'attendee' | 'organizer') => {
@@ -435,6 +506,14 @@ export default function ProfileScreen({ onNavigate, onEventRatingClick }: Props)
     </View>
   );
 
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#6366F1" />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
       {/* Header */}
@@ -448,11 +527,14 @@ export default function ProfileScreen({ onNavigate, onEventRatingClick }: Props)
       </View>
 
       {/* Content */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 80 }}>
         {activeTab === 'overview' && <Overview />}
         {activeTab === 'created' && <CreatedEvents />}
         {activeTab === 'attended' && <AttendedEvents />}
       </ScrollView>
+
+      {/* Floating Navigation */}
+      <FloatingNavigation activeScreen="profile" />
     </View>
   );
 }

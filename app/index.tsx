@@ -1,36 +1,19 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../Backend/firebase';
 
 export default function Index() {
-  const [isChecking, setIsChecking] = useState(true);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Mock authentication check
-    // For now, skip login and go straight to home
-    // Later, you can integrate Firebase auth here
-    const checkAuth = async () => {
-      try {
-        // Simulate checking auth state
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Mock: Always authenticated for now
-        const mockUser = { id: 1, name: 'Test User' };
-        
-        if (mockUser) {
-          router.replace('/home');
-        } else {
-          router.replace('./login');
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
-        router.replace('/home'); // Default to home for now
-      } finally {
-        setIsChecking(false);
-      }
-    };
-
-    checkAuth();
+    const sub = onAuthStateChanged(auth, (user) => {
+      if (user) router.replace('/home');
+      else router.replace('/login');
+      setChecking(false);
+    });
+    return () => sub();
   }, []);
 
   return (

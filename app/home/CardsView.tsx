@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,40 @@ import {
   Dimensions,
   ScrollView,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
+import { dataService } from '../../Backend/firebase';
+import { Event } from '../../lib/types';
 import { mockEvents } from '../../lib/events';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CardsView() {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const fetchedEvents = await dataService.getEvents({ limit: 15 });
+        // Combine database events with demo events, avoiding duplicates by ID
+        const dbEventIds = new Set(fetchedEvents.map(e => e.id.toString()));
+        const demoEventsFiltered = mockEvents.filter(e => !dbEventIds.has(e.id.toString()));
+        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered].slice(0, 25); // Limit total
+        setEvents(combinedEvents as Event[]);
+      } catch (error) {
+        console.error('Error fetching events:', error);
+        // Fallback to demo events if database fails
+        setEvents(mockEvents.slice(0, 20));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEvents();
+  }, []);
+
   const handleEventClick = (eventId: number | string) => {
     router.push({
       pathname: '../activity_detail',
@@ -29,13 +56,31 @@ export default function CardsView() {
     });
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#000" />
+        <Text style={styles.loadingText}>Loading events...</Text>
+      </View>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>No events found</Text>
+        <Text style={styles.emptySubtext}>Create your first event!</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.cardsScroll}
       contentContainerStyle={styles.cardsContent}
       showsVerticalScrollIndicator={false}
     >
-      {mockEvents.map((event) => (
+      {events.map((event) => (
         <Pressable 
           key={event.id} 
           style={styles.cardContainer}
@@ -108,6 +153,33 @@ export default function CardsView() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    color: '#000',
+    fontSize: 16,
+    marginTop: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  emptyText: {
+    color: '#000',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    color: '#666',
+    fontSize: 16,
+  },
   cardsScroll: {
     flex: 1,
   },
