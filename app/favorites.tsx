@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import { dataService, authService } from '../Backend/firebase';
 import { Event } from '../lib/types';
 import FloatingNavigation from '../components/FloatingNavigation';
+import { preloadEventFeed } from '../lib/eventFeed';
 
 export default function FavoritesScreen() {
   const [favoriteEvents, setFavoriteEvents] = useState<Event[]>([]);
@@ -34,16 +35,22 @@ export default function FavoritesScreen() {
         return;
       }
 
-      // Get user's favorite event IDs
-      const favoriteIds = await dataService.getUserFavorites();
-      
-      // Fetch event details for each favorite
-      const eventPromises = favoriteIds.map(id => dataService.getEvent(id));
-      const events = await Promise.all(eventPromises);
-      
-      // Filter out null events (in case some were deleted)
-      const validEvents = events.filter(event => event !== null) as Event[];
-      setFavoriteEvents(validEvents);
+      const favoriteIds = (await dataService.getUserFavorites()).map((id) => id.toString());
+      const idsSet = new Set(favoriteIds);
+
+      // Build from preloaded feed first so mock+firebase events both work.
+      const feed = await preloadEventFeed({ limit: 60, maxItems: 60 });
+      const fromFeed = feed.filter((event) => idsSet.has(String(event.id)));
+
+      // Backfill any missing ids directly from data source.
+      const missingIds = favoriteIds.filter(
+        (id) => !fromFeed.some((event) => String(event.id) === id)
+      );
+      const missingEvents = await Promise.all(missingIds.map((id) => dataService.getEvent(id)));
+      const backfilled = missingEvents.filter(Boolean) as Event[];
+
+      const combined = [...fromFeed, ...backfilled];
+      setFavoriteEvents(combined);
     } catch (error) {
       console.error('Error loading favorites:', error);
       Alert.alert('Error', 'Failed to load favorites.');
@@ -56,7 +63,7 @@ export default function FavoritesScreen() {
     try {
       await dataService.removeFromFavorites(eventId.toString());
       // Remove from local state
-      setFavoriteEvents(prev => prev.filter(e => e.id !== eventId));
+      setFavoriteEvents(prev => prev.filter(e => String(e.id) !== eventId.toString()));
       Alert.alert('Removed', 'Event removed from favorites.');
     } catch (error) {
       console.error('Error removing favorite:', error);
@@ -71,10 +78,10 @@ export default function FavoritesScreen() {
     });
   };
 
-  const handleOrganizerClick = (organizerName: string) => {
+  const handleOrganizerClick = (organizerName: string, organizerUid?: string) => {
     router.push({
       pathname: './organizer_info',
-      params: { organizerName }
+      params: { organizerName, organizerUid: organizerUid || '' }
     });
   };
 
@@ -113,7 +120,7 @@ export default function FavoritesScreen() {
         {/* Make organizer name clickable */}
         <Pressable onPress={(e) => {
           e.stopPropagation();
-          handleOrganizerClick(item.organizer.name);
+          handleOrganizerClick(item.organizer.name, item.organizer.uid);
         }}>
           <Text style={styles.eventOrganizer}>by {item.organizer.name}</Text>
         </Pressable>

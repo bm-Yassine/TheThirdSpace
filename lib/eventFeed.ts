@@ -7,10 +7,18 @@ const CACHE_TTL_MS = 2 * 60 * 1000;
 let cachedEvents: Event[] | null = null;
 let cachedAt = 0;
 
+const toOrganizerUid = (name?: string | null) => {
+  const normalized = (name || 'organizer')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+  return `mock-organizer-${normalized || 'user'}`;
+};
+
 const normalizeEvent = (event: any): Event => ({
   ...event,
   organizer: {
-    uid: event.organizer?.uid || event.createdBy,
+    uid: event.organizer?.uid || event.createdBy || toOrganizerUid(event.organizer?.name),
     name: event.organizer?.name || 'Unknown Organizer',
     avatar: event.organizer?.avatar || '👤',
     photoURL: event.organizer?.photoURL || null,
@@ -22,7 +30,9 @@ const normalizeEvent = (event: any): Event => ({
 
 const mergeWithMockEvents = (dbEvents: Event[], maxItems: number) => {
   const dbIds = new Set(dbEvents.map((e) => String(e.id)));
-  const mockOnly = mockEvents.filter((e) => !dbIds.has(String(e.id)));
+  const mockOnly = mockEvents
+    .filter((e) => !dbIds.has(String(e.id)))
+    .map((event) => normalizeEvent(event));
   return [...dbEvents, ...mockOnly].slice(0, maxItems);
 };
 
@@ -49,7 +59,7 @@ export async function preloadEventFeed(
     return combined;
   } catch (error) {
     if (cachedEvents) return cachedEvents;
-    const fallback = mockEvents.slice(0, maxItems);
+    const fallback = mockEvents.slice(0, maxItems).map((event) => normalizeEvent(event));
     cachedEvents = fallback;
     cachedAt = Date.now();
     return fallback;

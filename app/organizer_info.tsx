@@ -48,6 +48,7 @@ export default function OrganizerInfoScreen() {
   const organizerName = params.organizerName as string;
   
   const [organizer, setOrganizer] = useState<Organizer>({
+    uid: organizerUid || undefined,
     name: organizerName || 'Unknown Organizer',
     avatar: '👤',
   });
@@ -110,6 +111,12 @@ export default function OrganizerInfoScreen() {
 
         setUpcomingActivities(upcoming);
         setPastActivities(past);
+      } else {
+        setOrganizer((prev) => ({
+          ...prev,
+          uid: organizerUid || prev.uid,
+          name: organizerName || prev.name,
+        }));
       }
     } catch (error) {
       console.error('Error loading organizer profile:', error);

@@ -51,11 +51,17 @@ Join our community of developers creating universal apps.
 
 
 TO-DO
+
 ** Allow payments to book a place in the event through stripe. which allows to send money between users.
+
 ** Use Firebase or Clerk to manage authentication and loggin and signup for users.
+
 ** Use n8n to create and manage models that suggest the ordering and suggestions of the events according to profile, interests, previous events, weather, mood, personality ...
+
 ** Make logo.png the website's logo
+
 ** Make smooth discover view page, with a lot of animations and user interaction visuals
+
 ** Add the map for finding the events using a map service, and pins with the location of each event, maybe can show maps only per city you are located in, and can change city if needed.
 
 Currently working on 

@@ -14,6 +14,7 @@ try {
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, type DocumentData } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mockEvents } from '../lib/events';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -145,6 +146,34 @@ const dateToMillis = (value: any) => {
   return new Date(value).getTime() || 0;
 };
 
+const toOrganizerUid = (organizerName?: string | null) => {
+  const normalized = (organizerName || 'organizer')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+  return `mock-organizer-${normalized || 'user'}`;
+};
+
+const getMockEventById = (eventId: string) => {
+  const event = mockEvents.find((e) => String(e.id) === String(eventId));
+  if (!event) return null;
+
+  const organizerUid = event.organizer?.uid || toOrganizerUid(event.organizer?.name);
+  return {
+    ...event,
+    id: String(event.id),
+    createdBy: organizerUid,
+    organizer: {
+      ...event.organizer,
+      uid: organizerUid,
+      photoURL: event.organizer?.photoURL || null,
+    },
+    imageUrl:
+      event.imageUrl ||
+      'https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=400&h=800&fit=crop',
+  };
+};
+
 // Firestore data functions
 export const dataService = {
   // User Profile functions
@@ -272,7 +301,8 @@ export const dataService = {
     if (eventDoc.exists()) {
       return { id: eventDoc.id, ...eventDoc.data() };
     }
-    return null;
+
+    return getMockEventById(eventId);
   },
 
   async updateEvent(eventId: string, updates: Partial<DocumentData>) {
@@ -334,15 +364,20 @@ export const dataService = {
     if (!user) throw new Error('User not authenticated');
 
     // Get user profile to add their info to the event
-    const userProfile = await this.getUserProfile(user.uid);
+    let userProfile = await this.getUserProfile(user.uid);
+    if (!userProfile) {
+      userProfile = await this.ensureUserProfileFromAuthUser(user);
+    }
     if (!userProfile) throw new Error('User profile not found');
 
     // Get the event first to determine approval/waitlist status
     const eventRef = doc(db, 'events', eventId);
     const eventDoc = await getDoc(eventRef);
-    if (!eventDoc.exists()) throw new Error('Event not found');
+    const mockEvent = !eventDoc.exists() ? getMockEventById(eventId) : null;
+    if (!eventDoc.exists() && !mockEvent) throw new Error('Event not found');
 
-    const eventData = eventDoc.data();
+    const eventData: any = eventDoc.exists() ? eventDoc.data() : mockEvent;
+    if (!eventData) throw new Error('Event not found');
     const currentAttendees = eventData.attendees || 0;
     const maxAttendees = eventData.maxAttendees || 0;
     const isFull = maxAttendees > 0 && currentAttendees >= maxAttendees;
@@ -366,7 +401,7 @@ export const dataService = {
     });
 
     // Only auto-confirm attendees if approved immediately
-    if (status === 'approved') {
+    if (status === 'approved' && eventDoc.exists()) {
       const attendeesList = eventData.attendeesList || [];
 
       // Check if user is already in the attendees list
