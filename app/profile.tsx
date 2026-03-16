@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { LogOut, ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -22,6 +23,11 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [createdEvents, setCreatedEvents] = useState<Event[]>([]);
   const [joinedEvents, setJoinedEvents] = useState<Event[]>([]);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editInterests, setEditInterests] = useState('');
 
   useEffect(() => {
     const loadProfileData = async () => {
@@ -73,6 +79,60 @@ export default function ProfileScreen() {
       rating: profile?.stats?.rating ?? 0,
     };
   }, [profile, createdEvents.length, joinedEvents.length]);
+
+  useEffect(() => {
+    if (!profile) return;
+    setEditDisplayName(profile.displayName || '');
+    setEditBio(profile.bio || '');
+    setEditInterests((profile.interests || []).join(', '));
+  }, [profile]);
+
+  const onSaveProfile = async () => {
+    const user = authService.getCurrentUser();
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please sign in again to update your profile.');
+      router.replace('/login');
+      return;
+    }
+
+    const nextName = editDisplayName.trim();
+    if (!nextName) {
+      Alert.alert('Missing Name', 'Please enter your name.');
+      return;
+    }
+
+    const interests = editInterests
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    setSavingProfile(true);
+    try {
+      await dataService.updateUserProfile(user.uid, {
+        displayName: nextName,
+        bio: editBio.trim(),
+        interests,
+      });
+
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              displayName: nextName,
+              bio: editBio.trim(),
+              interests,
+            }
+          : prev
+      );
+      setIsEditingProfile(false);
+      Alert.alert('Saved', 'Your profile has been updated.');
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      Alert.alert('Error', 'Failed to update your profile. Please try again.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const onLogout = () => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -129,6 +189,66 @@ export default function ProfileScreen() {
                 <Text style={styles.muted}>{profile?.email || ''}</Text>
               </View>
             </View>
+
+            {!isEditingProfile ? (
+              <View style={styles.profileDetailsCard}>
+                <Text style={styles.profileLabel}>Bio</Text>
+                <Text style={styles.profileValue}>{profile?.bio?.trim() || 'Tell others about yourself.'}</Text>
+                <Text style={[styles.profileLabel, { marginTop: 10 }]}>Interests</Text>
+                <Text style={styles.profileValue}>
+                  {profile?.interests?.length ? profile.interests.join(', ') : 'Add your interests (music, sports, food...)'}
+                </Text>
+
+                <Pressable style={styles.editBtn} onPress={() => setIsEditingProfile(true)}>
+                  <Text style={styles.editBtnText}>Edit Profile</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.profileDetailsCard}>
+                <Text style={styles.profileLabel}>Name</Text>
+                <TextInput
+                  value={editDisplayName}
+                  onChangeText={setEditDisplayName}
+                  placeholder="Your name"
+                  style={styles.input}
+                />
+
+                <Text style={[styles.profileLabel, { marginTop: 10 }]}>Bio</Text>
+                <TextInput
+                  value={editBio}
+                  onChangeText={setEditBio}
+                  placeholder="Short bio"
+                  multiline
+                  style={[styles.input, styles.textArea]}
+                />
+
+                <Text style={[styles.profileLabel, { marginTop: 10 }]}>Interests</Text>
+                <TextInput
+                  value={editInterests}
+                  onChangeText={setEditInterests}
+                  placeholder="Music, Art, Hiking"
+                  style={styles.input}
+                />
+
+                <View style={styles.editActionsRow}>
+                  <Pressable
+                    style={[styles.editBtn, styles.cancelBtn]}
+                    onPress={() => {
+                      setIsEditingProfile(false);
+                      setEditDisplayName(profile?.displayName || '');
+                      setEditBio(profile?.bio || '');
+                      setEditInterests((profile?.interests || []).join(', '));
+                    }}
+                    disabled={savingProfile}
+                  >
+                    <Text style={[styles.editBtnText, styles.cancelBtnText]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={styles.editBtn} onPress={onSaveProfile} disabled={savingProfile}>
+                    <Text style={styles.editBtnText}>{savingProfile ? 'Saving...' : 'Save'}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
 
             <View style={styles.statsRow}>
               <View style={styles.statItem}><Text style={styles.statValue}>{stats.eventsJoined}</Text><Text style={styles.statLabel}>Joined</Text></View>
@@ -207,6 +327,67 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   avatarText: { fontSize: 28 },
+  profileDetailsCard: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    backgroundColor: '#fff',
+  },
+  profileLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  profileValue: {
+    fontSize: 14,
+    color: '#111827',
+    lineHeight: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#111827',
+    backgroundColor: '#f9fafb',
+  },
+  textArea: {
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  editActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 12,
+  },
+  editBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  editBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cancelBtn: {
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    alignSelf: 'auto',
+  },
+  cancelBtnText: {
+    color: '#374151',
+  },
 
   statsRow: {
     flexDirection: 'row',

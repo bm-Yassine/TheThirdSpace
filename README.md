@@ -48,3 +48,39 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+
+TO-DO
+** Allow payments to book a place in the event through stripe. which allows to send money between users.
+** Use Firebase or Clerk to manage authentication and loggin and signup for users.
+** Use n8n to create and manage models that suggest the ordering and suggestions of the events according to profile, interests, previous events, weather, mood, personality ...
+** Make logo.png the website's logo
+** Make smooth discover view page, with a lot of animations and user interaction visuals
+** Add the map for finding the events using a map service, and pins with the location of each event, maybe can show maps only per city you are located in, and can change city if needed.
+
+Currently working on 
+1) Production OAuth setup
+- Replace remaining placeholder Google OAuth IDs with real ios/android/web IDs.
+- Add Vercel production domain in Firebase Auth authorized domains : 
+
+2) Vercel deployment hardening
+- Confirm Vercel project uses:
+  - Build command: npx expo export --platform web
+  - Output directory: dist
+  - Rewrites from vercel.json are active
+
+3) App package updates (recommended by Expo CLI)
+- Align Expo-related packages to expected SDK-compatible versions listed by expo start.
+
+4) Stripe real integration
+- Replace simulated payment with actual Stripe checkout + webhook/confirmation flow.
+
+5) Firestore security rules and indexes
+- Lock writes to authenticated users and resource owners.
+- Add required indexes for event/conversation queries.
+
+6) Profile creation and editing screen.
+
+7) Map View, opens a similar to google maps view with pins on the location of the activities and events in the city.
+
+8) Choose a song and background photo/video when creating an event.
