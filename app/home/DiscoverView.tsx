@@ -10,6 +10,7 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
@@ -20,9 +21,11 @@ import { mockEvents } from '../../lib/events';
 interface DiscoverViewProps {
   currentIndex: number;
   setCurrentIndex: (index: number) => void;
+  viewMode: 'discover' | 'cards' | 'map';
+  setViewMode: (mode: 'discover' | 'cards' | 'map') => void;
 }
 
-export default function DiscoverView({ currentIndex, setCurrentIndex }: DiscoverViewProps) {
+export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, setViewMode }: DiscoverViewProps) {
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
   const autoScrollTimer = useRef<any>(null);
@@ -31,12 +34,39 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
   const [isAutoScrolling, setIsAutoScrolling] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [showHeart, setShowHeart] = useState(false);
+  const confettiAnimation = useRef(new Animated.Value(0)).current;
+  const heartAnimation = useRef(new Animated.Value(0)).current;
 
   // Check authentication status
   useEffect(() => {
+    const loadUserInteractionState = async () => {
+      try {
+        const [favorites, commitments] = await Promise.all([
+          dataService.getUserFavorites(),
+          dataService.getUserCommitments(),
+        ]);
+
+        setFavoriteIds(new Set(favorites.map((id) => id.toString())));
+        setJoinedIds(new Set(commitments.map((commitment: any) => commitment.eventId.toString())));
+      } catch {
+        setFavoriteIds(new Set());
+        setJoinedIds(new Set());
+      }
+    };
+
     const checkAuth = () => {
       const user = authService.getCurrentUser();
       setIsLoggedIn(!!user);
+      if (user) {
+        loadUserInteractionState();
+      } else {
+        setFavoriteIds(new Set());
+        setJoinedIds(new Set());
+      }
     };
 
     checkAuth();
@@ -44,6 +74,12 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
     // Listen for auth state changes
     const unsubscribe = authService.onAuthStateChange((user) => {
       setIsLoggedIn(!!user);
+      if (user) {
+        loadUserInteractionState();
+      } else {
+        setFavoriteIds(new Set());
+        setJoinedIds(new Set());
+      }
     });
 
     return () => unsubscribe();
@@ -57,7 +93,21 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
         // Combine database events with demo events, avoiding duplicates by ID
         const dbEventIds = new Set(fetchedEvents.map(e => e.id.toString()));
         const demoEventsFiltered = mockEvents.filter(e => !dbEventIds.has(e.id.toString()));
-        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered].slice(0, 15); // Limit total
+        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered]
+          .slice(0, 15)
+          .map((event: any) => ({
+            ...event,
+            organizer: {
+              uid: event.organizer?.uid || event.createdBy,
+              name: event.organizer?.name || 'Unknown Organizer',
+              avatar: event.organizer?.avatar || '👤',
+              photoURL: event.organizer?.photoURL || null,
+            },
+            imageUrl:
+              event.imageUrl ||
+              'https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=400&h=800&fit=crop',
+          }));
+
         setEvents(combinedEvents as Event[]);
       } catch (error) {
         console.error('Error fetching events:', error);
@@ -108,7 +158,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
     if (!isLoggedIn) {
       Alert.alert(
         'Login Required',
-        'Please sign in to view event details and join events.',
+        'Sign in to view event details and interact with events.',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Sign In', onPress: () => router.push('/login') }
@@ -123,7 +173,9 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
     });
   };
 
-  const handleFavorite = (eventId: number | string) => {
+  const handleFavorite = async (eventId: number | string) => {
+    const id = eventId.toString();
+
     if (!isLoggedIn) {
       Alert.alert(
         'Login Required',
@@ -136,14 +188,111 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
       return;
     }
 
-    // TODO: Implement favorite functionality
-    Alert.alert('Success', 'Event added to favorites!');
+    try {
+      const isAlreadyFavorite = favoriteIds.has(id);
+
+      if (isAlreadyFavorite) {
+        await dataService.removeFromFavorites(id);
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } else {
+        await dataService.addToFavorites(id);
+        setFavoriteIds((prev) => new Set(prev).add(id));
+      }
+
+      // Show heart animation
+      setShowHeart(true);
+      heartAnimation.setValue(0);
+      Animated.sequence([
+        Animated.spring(heartAnimation, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 3,
+        }),
+        Animated.timing(heartAnimation, {
+          toValue: 0,
+          duration: 300,
+          delay: 800,
+          useNativeDriver: true,
+        }),
+      ]).start(() => setShowHeart(false));
+    } catch (error) {
+      console.error('Error adding to favorites:', error);
+      Alert.alert('Error', 'Failed to add event to favorites. Please try again.');
+    }
   };
 
-  const handleOrganizerClick = (organizerName: string) => {
+  const handleJoinEvent = async (eventId: number | string) => {
+    const id = eventId.toString();
+
+    if (!isLoggedIn) {
+      Alert.alert(
+        'Login Required',
+        'Please sign in to join events.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign In', onPress: () => router.push('/login') }
+        ]
+      );
+      return;
+    }
+
+    try {
+      if (joinedIds.has(id)) {
+        await dataService.cancelCommitment(id);
+        setJoinedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } else {
+        const result = await dataService.commitToEvent(id);
+        setJoinedIds((prev) => new Set(prev).add(id));
+
+        if (result.status === 'pending') {
+          Alert.alert(
+            'Request Sent',
+            result.reason === 'waitlist'
+              ? 'This event is full. You have been added to the waitlist.'
+              : 'Your join request is pending organizer approval.'
+          );
+        }
+      }
+
+      // Show confetti animation
+      setShowConfetti(true);
+      confettiAnimation.setValue(0);
+      Animated.timing(confettiAnimation, {
+        toValue: 1,
+        duration: 2000,
+        useNativeDriver: true,
+      }).start(() => setShowConfetti(false));
+    } catch (error) {
+      console.error('Error joining event:', error);
+      Alert.alert('Error', 'Failed to join event. Please try again.');
+    }
+  };
+
+  const handleOrganizerClick = (organizerName: string, organizerUid?: string) => {
+    if (!isLoggedIn) {
+      Alert.alert(
+        'Login Required',
+        'Sign in to view organizer profiles and send messages.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign In', onPress: () => router.push('/login') }
+        ]
+      );
+      return;
+    }
+
     router.push({
       pathname: '../organizer_info',
-      params: { organizerName }
+      params: { organizerName, organizerUid: organizerUid || '' }
     });
   };
 
@@ -197,8 +346,8 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
                   <Text style={styles.eventTitle}>{event.title}</Text>
                 </Pressable>
 
-                <Pressable
-                  onPress={() => handleOrganizerClick(event.organizer.name)}
+                  <Pressable
+                    onPress={() => handleOrganizerClick(event.organizer.name, event.organizer.uid)}
                   style={styles.organizerContainer}
                 >
                   <View style={styles.organizerAvatar}>
@@ -267,15 +416,25 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
                     onPress={() => handleFavorite(event.id)}
                   >
                     <Text style={styles.buttonIcon}>❤️</Text>
-                    <Text style={styles.buttonText}>Favorite</Text>
+                    <Text style={styles.buttonText}>
+                      {favoriteIds.has(event.id.toString()) ? 'Favorited' : 'Favorite'}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={[styles.joinButton, !isLoggedIn && styles.buttonDisabled]}
-                    onPress={() => handleEventClick(event.id)}
+                    onPress={() => handleJoinEvent(event.id)}
                   >
                     <Text style={styles.buttonIcon}>✓</Text>
-                    <Text style={styles.buttonText}>{isLoggedIn ? 'Join' : 'Sign In to Join'}</Text>
+                    <Text style={styles.buttonText}>
+                      {!isLoggedIn
+                        ? 'Sign In to Join'
+                        : joinedIds.has(event.id.toString())
+                        ? 'Joined'
+                        : event.requiresApproval
+                        ? 'Request'
+                        : 'Join'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -286,19 +445,77 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
 
       {/* Top Right Controls */}
       <View style={styles.topRightControls}>
+        {/* Pause/Play Button */}
         <TouchableOpacity
-          style={styles.controlButton}
-          onPress={() => setIsMuted(!isMuted)}
-        >
-          <Text style={styles.controlIcon}>{isMuted ? '🔇' : '🔊'}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.controlButton}
+          style={styles.smallControlButton}
           onPress={() => setIsAutoScrolling(!isAutoScrolling)}
         >
-          <Text style={styles.controlIcon}>{isAutoScrolling ? '⏸️' : '▶️'}</Text>
+          <Text style={styles.smallControlIcon}>{isAutoScrolling ? '⏸' : '▶'}</Text>
         </TouchableOpacity>
+
+        {/* Music Toggle Button */}
+        <TouchableOpacity
+          style={styles.smallControlButton}
+          onPress={() => setIsMuted(!isMuted)}
+        >
+          <Text style={styles.smallControlIcon}>{isMuted ? '🔇' : '🎵'}</Text>
+        </TouchableOpacity>
+
+        {/* View Selector with Water Droplet Effect */}
+        <View style={styles.viewSelectorContainer}>
+          {/* Vertical Rectangle - Discovery View */}
+          <TouchableOpacity
+            style={[
+              styles.viewSelectorButton,
+              viewMode === 'discover' && styles.viewSelectorActive,
+            ]}
+            onPress={() => setViewMode('discover')}
+          >
+            <View style={styles.verticalRectangle}>
+              <View style={[
+                styles.verticalRectangleInner,
+                viewMode === 'discover' && styles.iconActive
+              ]} />
+            </View>
+          </TouchableOpacity>
+
+          {/* Horizontal Rectangle - Cards View */}
+          <TouchableOpacity
+            style={[
+              styles.viewSelectorButton,
+              viewMode === 'cards' && styles.viewSelectorActive,
+            ]}
+            onPress={() => setViewMode('cards')}
+          >
+            <View style={styles.horizontalRectangle}>
+              <View style={[
+                styles.horizontalRectangleInner,
+                viewMode === 'cards' && styles.iconActive
+              ]} />
+            </View>
+          </TouchableOpacity>
+
+          {/* Map Pin Icon - Map View */}
+          <TouchableOpacity
+            style={[
+              styles.viewSelectorButton,
+              viewMode === 'map' && styles.viewSelectorActive,
+            ]}
+            onPress={() => setViewMode('map')}
+          >
+            <View style={styles.mapPinContainer}>
+              <View style={[
+                styles.mapPin,
+                viewMode === 'map' && styles.iconActive
+              ]}>
+                <View style={[
+                  styles.mapPinInner,
+                  viewMode === 'map' && styles.mapPinInnerActive
+                ]} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Right Side Scroll Indicators */}
@@ -322,6 +539,70 @@ export default function DiscoverView({ currentIndex, setCurrentIndex }: Discover
           ))}
         </View>
       </View>
+
+      {/* Confetti Animation */}
+      {showConfetti && (
+        <View style={styles.animationContainer}>
+          {[...Array(30)].map((_, i) => {
+            const randomX = Math.random() * SCREEN_WIDTH;
+            const randomDelay = Math.random() * 200;
+            const randomColor = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8'][Math.floor(Math.random() * 6)];
+            
+            return (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.confetti,
+                  {
+                    backgroundColor: randomColor,
+                    left: randomX,
+                    transform: [
+                      {
+                        translateY: confettiAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [SCREEN_HEIGHT, -100],
+                        }),
+                      },
+                      {
+                        rotate: confettiAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '720deg'],
+                        }),
+                      },
+                    ],
+                    opacity: confettiAnimation.interpolate({
+                      inputRange: [0, 0.8, 1],
+                      outputRange: [1, 1, 0],
+                    }),
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+      )}
+
+      {/* Heart Animation */}
+      {showHeart && (
+        <Animated.View
+          style={[
+            styles.heartContainer,
+            {
+              transform: [
+                {
+                  scale: heartAnimation.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0, 1.2, 1],
+                  }),
+                },
+              ],
+              opacity: heartAnimation,
+            },
+          ]}
+        >
+          <Text style={styles.heartEmoji}>❤️</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -411,6 +692,7 @@ const styles = StyleSheet.create({
   topInfo: {
     paddingTop: 40,
     paddingHorizontal: 20,
+    paddingRight: 90, // Space for top right controls
   },
   eventTitle: {
     fontSize: 28,
@@ -424,7 +706,7 @@ const styles = StyleSheet.create({
   organizerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   organizerAvatar: {
     width: 40,
@@ -460,13 +742,14 @@ const styles = StyleSheet.create({
   },
   middleContent: {
     paddingHorizontal: 20,
+    paddingRight: 90, // Space for side buttons
     marginBottom: 'auto',
-    marginTop: 80,
+    marginTop: 20,
   },
   description: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#fff',
-    lineHeight: 24,
+    lineHeight: 22,
     marginBottom: 12,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
     textShadowOffset: { width: 0, height: 1 },
@@ -500,7 +783,7 @@ const styles = StyleSheet.create({
   },
   bottomContent: {
     paddingHorizontal: 20,
-    paddingBottom: 50,
+    paddingBottom: 100, // More space above navigation
   },
   detailsCard: {
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -605,11 +888,137 @@ const styles = StyleSheet.create({
   },
   topRightControls: {
     position: 'absolute',
-    top: 40,
+    top: 60,
     right: 16,
-    flexDirection: 'row',
-    gap: 12,
+    flexDirection: 'column',
+    gap: 10,
     zIndex: 40,
+  },
+  smallControlButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  smallControlIcon: {
+    fontSize: 16,
+  },
+  viewSelectorContainer: {
+    marginTop: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 24,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  viewSelectorButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  viewSelectorActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+  },
+  verticalRectangle: {
+    width: 18,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verticalRectangleInner: {
+    width: 12,
+    height: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 3,
+  },
+  horizontalRectangle: {
+    width: 24,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  horizontalRectangleInner: {
+    width: 20,
+    height: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 3,
+  },
+  mapPinContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapPin: {
+    width: 16,
+    height: 20,
+    borderRadius: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    transform: [{ rotate: '-45deg' }],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapPinInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  mapPinInnerActive: {
+    backgroundColor: '#fff',
+  },
+  iconActive: {
+    borderColor: '#fff',
+    opacity: 1,
+  },
+  animationContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none',
+    zIndex: 1000,
+  },
+  confetti: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    bottom: 0,
+  },
+  heartContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -50,
+    marginTop: -50,
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    pointerEvents: 'none',
+  },
+  heartEmoji: {
+    fontSize: 80,
   },
   activeIndicator: {
     backgroundColor: '#fff',

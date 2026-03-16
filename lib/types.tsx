@@ -1,6 +1,8 @@
 export type Organizer = {
+  uid?: string;
   name: string;
   avatar?: string;
+  photoURL?: string | null;
 };
 
 export type Event = {

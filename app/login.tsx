@@ -1,10 +1,10 @@
 // screens/LoginScreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image,
+  View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { authService, auth } from '../Backend/firebase';
+import { authService, auth, dataService, googleClientIds } from '../Backend/firebase';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -19,11 +19,11 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Google Auth setup - REPLACE WITH YOUR REAL CLIENT IDs
+  // Google Auth setup (reads from EXPO_PUBLIC_* env vars when present)
   const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: '258758943296-abcdefghijklmnop.apps.googleusercontent.com', // Replace with your Android client ID
-    iosClientId: '258758943296-abcdefghijklmnop.apps.googleusercontent.com', // Replace with your iOS client ID
-    webClientId: '258758943296-p4o6gvj7l0f178o8tcf7549qkkiggif1.apps.googleusercontent.com', // Replace with your Web client ID
+    androidClientId: googleClientIds.androidClientId || undefined,
+    iosClientId: googleClientIds.iosClientId || undefined,
+    webClientId: googleClientIds.webClientId || undefined,
   });
 
   useEffect(() => {
@@ -32,25 +32,11 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
       const credential = GoogleAuthProvider.credential(id_token);
       signInWithCredential(auth, credential)
         .then(async (userCredential) => {
-          // Check if user profile exists, if not create one
-          const { dataService } = await import('../Backend/firebase');
-          const profile = await dataService.getUserProfile(userCredential.user.uid);
-          
-          if (!profile) {
-            // Create profile for new Google user
-            await dataService.createUserProfile(userCredential.user.uid, {
-              email: userCredential.user.email || '',
-              displayName: userCredential.user.displayName || 'User',
-              photoURL: userCredential.user.photoURL,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            });
-          }
-          
+          await dataService.ensureUserProfileFromAuthUser(userCredential.user);
           router.replace('/home');
         })
-        .catch((error) => {
-          setErr('Google sign-in failed. Please try again.');
+        .catch((error: any) => {
+          setErr(mapAuthError(error?.code) || 'Google sign-in failed. Please try again.');
         });
     }
   }, [response]);
@@ -91,6 +77,21 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   const handleGoogleSignIn = () => {
+    const missingClientId =
+      Platform.OS === 'web'
+        ? !googleClientIds.webClientId
+        : Platform.OS === 'ios'
+        ? !googleClientIds.iosClientId
+        : !googleClientIds.androidClientId;
+
+    if (missingClientId) {
+      Alert.alert(
+        'Google Sign-In Not Configured',
+        'Missing Google OAuth client ID for this platform. Add EXPO_PUBLIC_WEB_CLIENT_ID / EXPO_PUBLIC_IOS_CLIENT_ID / EXPO_PUBLIC_ANDROID_CLIENT_ID.'
+      );
+      return;
+    }
+
     promptAsync();
   };
 

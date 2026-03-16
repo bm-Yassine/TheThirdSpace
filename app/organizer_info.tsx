@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { ArrowLeft, Calendar, History } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { dataService, type UserProfile } from '../Backend/firebase';
+import { authService, dataService } from '../Backend/firebase';
 
 type Organizer = {
   uid?: string;
@@ -26,23 +26,11 @@ type Organizer = {
 };
 
 type ActivityStub = {
-  id: number | string;
+  id: string;
   title: string;
   date: string;
   time: string;
   attendees: number;
-};
-
-// Mock data for organizer activities
-const mockOrganizerActivities: { upcoming: ActivityStub[]; past: ActivityStub[] } = {
-  upcoming: [
-    { id: 1, title: 'Morning Yoga Session', date: 'Today', time: '8:00 AM', attendees: 12 },
-    { id: 2, title: 'Meditation Workshop', date: 'Saturday', time: '10:00 AM', attendees: 8 },
-  ],
-  past: [
-    { id: 3, title: 'Sunset Yoga', date: 'Last Week', time: '6:00 PM', attendees: 15 },
-    { id: 4, title: 'Beginners Yoga', date: '2 weeks ago', time: '9:00 AM', attendees: 10 },
-  ],
 };
 
 const mockOrganizerQualities = {
@@ -63,20 +51,27 @@ export default function OrganizerInfoScreen() {
     name: organizerName || 'Unknown Organizer',
     avatar: '👤',
   });
+  const [upcomingActivities, setUpcomingActivities] = useState<ActivityStub[]>([]);
+  const [pastActivities, setPastActivities] = useState<ActivityStub[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadOrganizerProfile();
+    loadOrganizerData();
   }, [organizerUid]);
 
-  const loadOrganizerProfile = async () => {
-    if (!organizerUid) {
+  const loadOrganizerData = async () => {
+    const targetUid = organizerUid || '';
+    if (!targetUid && !organizerName) {
       setLoading(false);
       return;
     }
 
     try {
-      const profile = await dataService.getUserProfile(organizerUid);
+      let profile = targetUid ? await dataService.getUserProfile(targetUid) : null;
+      if (!profile && organizerName) {
+        profile = await dataService.getUserByDisplayName(organizerName);
+      }
+
       if (profile) {
         setOrganizer({
           uid: profile.uid,
@@ -86,6 +81,35 @@ export default function OrganizerInfoScreen() {
           bio: profile.bio || 'Hi! I\'m an event organizer passionate about bringing people together for amazing experiences.',
           stats: profile.stats,
         });
+
+        const events = await dataService.getEvents({ organizerId: profile.uid });
+        const now = new Date();
+
+        const normalized = (events as any[]).map((event) => {
+          const dateText = event.date || '';
+          const parsedDate = new Date(dateText);
+          return {
+            id: String(event.id),
+            title: event.title || 'Untitled Event',
+            date: dateText || 'TBD',
+            time: event.time || 'TBD',
+            attendees: Number(event.attendees || 0),
+            parsedDate,
+          };
+        });
+
+        const upcoming = normalized
+          .filter((e) => !Number.isNaN(e.parsedDate.getTime()) && e.parsedDate >= now)
+          .sort((a, b) => a.parsedDate.getTime() - b.parsedDate.getTime())
+          .map(({ parsedDate, ...rest }) => rest);
+
+        const past = normalized
+          .filter((e) => Number.isNaN(e.parsedDate.getTime()) || e.parsedDate < now)
+          .sort((a, b) => b.parsedDate.getTime() - a.parsedDate.getTime())
+          .map(({ parsedDate, ...rest }) => rest);
+
+        setUpcomingActivities(upcoming);
+        setPastActivities(past);
       }
     } catch (error) {
       console.error('Error loading organizer profile:', error);
@@ -194,7 +218,10 @@ export default function OrganizerInfoScreen() {
           </View>
 
           <View style={{ gap: 10 }}>
-            {mockOrganizerActivities.upcoming.map((a) => (
+            {upcomingActivities.length === 0 && (
+              <Text style={styles.subtle}>No upcoming activities yet.</Text>
+            )}
+            {upcomingActivities.map((a) => (
               <Pressable key={a.id} onPress={() => handleActivityClick(a)} style={styles.card}>
                 <Text style={styles.cardTitle}>{a.title}</Text>
                 <Text style={styles.subtle}>{a.date} • {a.time}</Text>
@@ -212,7 +239,10 @@ export default function OrganizerInfoScreen() {
           </View>
 
           <View style={{ gap: 10 }}>
-            {mockOrganizerActivities.past.map((a) => (
+            {pastActivities.length === 0 && (
+              <Text style={styles.subtle}>No past activities yet.</Text>
+            )}
+            {pastActivities.map((a) => (
               <Pressable key={a.id} onPress={() => handleActivityClick(a)} style={styles.card}>
                 <Text style={styles.cardTitle}>{a.title}</Text>
                 <Text style={styles.subtle}>{a.date} • {a.time}</Text>
@@ -220,6 +250,20 @@ export default function OrganizerInfoScreen() {
               </Pressable>
             ))}
           </View>
+
+          {!!organizer.uid && organizer.uid !== authService.getCurrentUser()?.uid && (
+            <Pressable
+              style={styles.messageBtn}
+              onPress={() =>
+                router.push({
+                  pathname: '/chats',
+                  params: { otherUserId: organizer.uid },
+                })
+              }
+            >
+              <Text style={styles.messageBtnText}>Message Organizer</Text>
+            </Pressable>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -269,4 +313,16 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, backgroundColor: '#fff' },
   cardTitle: { fontSize: 15, fontWeight: '600', color: '#111827', marginBottom: 2 },
   meta: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  messageBtn: {
+    marginTop: 14,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  messageBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

@@ -9,17 +9,57 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { dataService } from '../../Backend/firebase';
+import { dataService, authService } from '../../Backend/firebase';
 import { Event } from '../../lib/types';
 import { mockEvents } from '../../lib/events';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function CardsView() {
+interface CardsViewProps {
+  viewMode: 'discover' | 'cards' | 'map';
+  setViewMode: (mode: 'discover' | 'cards' | 'map') => void;
+}
+
+export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const hydrateUserState = async () => {
+      try {
+        const [favorites, commitments] = await Promise.all([
+          dataService.getUserFavorites(),
+          dataService.getUserCommitments(),
+        ]);
+        setFavoriteIds(new Set(favorites.map((id) => id.toString())));
+        setJoinedIds(new Set(commitments.map((c: any) => c.eventId.toString())));
+      } catch {
+        setFavoriteIds(new Set());
+        setJoinedIds(new Set());
+      }
+    };
+
+    const user = authService.getCurrentUser();
+    setIsLoggedIn(!!user);
+    if (user) hydrateUserState();
+
+    const unsubscribe = authService.onAuthStateChange((nextUser) => {
+      setIsLoggedIn(!!nextUser);
+      if (nextUser) hydrateUserState();
+      else {
+        setFavoriteIds(new Set());
+        setJoinedIds(new Set());
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -28,7 +68,20 @@ export default function CardsView() {
         // Combine database events with demo events, avoiding duplicates by ID
         const dbEventIds = new Set(fetchedEvents.map(e => e.id.toString()));
         const demoEventsFiltered = mockEvents.filter(e => !dbEventIds.has(e.id.toString()));
-        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered].slice(0, 25); // Limit total
+        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered]
+          .slice(0, 25)
+          .map((event: any) => ({
+            ...event,
+            organizer: {
+              uid: event.organizer?.uid || event.createdBy,
+              name: event.organizer?.name || 'Unknown Organizer',
+              avatar: event.organizer?.avatar || '👤',
+              photoURL: event.organizer?.photoURL || null,
+            },
+            imageUrl:
+              event.imageUrl ||
+              'https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=400&h=800&fit=crop',
+          }));
         setEvents(combinedEvents as Event[]);
       } catch (error) {
         console.error('Error fetching events:', error);
@@ -42,18 +95,91 @@ export default function CardsView() {
     fetchEvents();
   }, []);
 
+  const requireLogin = (message: string) => {
+    Alert.alert('Login Required', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign In', onPress: () => router.push('/login') },
+    ]);
+  };
+
   const handleEventClick = (eventId: number | string) => {
+    if (!isLoggedIn) {
+      requireLogin('Sign in to view event details and interact with events.');
+      return;
+    }
+
     router.push({
       pathname: '../activity_detail',
       params: { eventId: eventId.toString() }
     });
   };
 
-  const handleOrganizerClick = (organizerName: string) => {
+  const handleOrganizerClick = (organizerName: string, organizerUid?: string) => {
+    if (!isLoggedIn) {
+      requireLogin('Sign in to view organizer profiles and send messages.');
+      return;
+    }
+
     router.push({
       pathname: '../organizer_info',
-      params: { organizerName }
+      params: { organizerName, organizerUid: organizerUid || '' }
     });
+  };
+
+  const handleFavorite = async (eventId: string | number) => {
+    if (!isLoggedIn) {
+      requireLogin('Please sign in to add events to favorites.');
+      return;
+    }
+
+    const id = eventId.toString();
+    try {
+      if (favoriteIds.has(id)) {
+        await dataService.removeFromFavorites(id);
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } else {
+        await dataService.addToFavorites(id);
+        setFavoriteIds((prev) => new Set(prev).add(id));
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to update favorites.');
+    }
+  };
+
+  const handleJoin = async (event: Event) => {
+    if (!isLoggedIn) {
+      requireLogin('Please sign in to join events.');
+      return;
+    }
+
+    const id = event.id.toString();
+    try {
+      if (joinedIds.has(id)) {
+        await dataService.cancelCommitment(id);
+        setJoinedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } else {
+        const result = await dataService.commitToEvent(id);
+        setJoinedIds((prev) => new Set(prev).add(id));
+        if (result.status === 'pending') {
+          Alert.alert(
+            'Request Sent',
+            result.reason === 'waitlist'
+              ? 'This event is full. You were added to the waitlist.'
+              : 'Your join request is pending organizer approval.'
+          );
+        }
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to join this event.');
+    }
   };
 
   if (loading) {
@@ -102,7 +228,7 @@ export default function CardsView() {
             {/* Make organizer name clickable */}
             <Pressable onPress={(e) => {
               e.stopPropagation();
-              handleOrganizerClick(event.organizer.name);
+              handleOrganizerClick(event.organizer.name, event.organizer.uid);
             }}>
               <Text style={styles.cardOrganizer}>{`by ${event.organizer.name}`}</Text>
             </Pressable>
@@ -127,22 +253,32 @@ export default function CardsView() {
 
             <View style={styles.cardButtons}>
               <TouchableOpacity 
-                style={styles.cardFavoriteBtn}
+                style={[styles.cardFavoriteBtn, !isLoggedIn && styles.cardButtonDisabled]}
                 onPress={(e) => {
                   e.stopPropagation();
-                  // Handle favorite action
+                  handleFavorite(event.id);
                 }}
               >
-                <Text style={styles.cardBtnText}>Favorite</Text>
+                <Text style={styles.cardBtnText}>
+                  {favoriteIds.has(event.id.toString()) ? 'Favorited' : 'Favorite'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.cardJoinBtn}
+                style={[styles.cardJoinBtn, !isLoggedIn && styles.cardButtonDisabled]}
                 onPress={(e) => {
                   e.stopPropagation();
-                  handleEventClick(event.id);
+                  handleJoin(event);
                 }}
               >
-                <Text style={styles.cardBtnText}>Join</Text>
+                <Text style={styles.cardBtnText}>
+                  {!isLoggedIn
+                    ? 'Sign In'
+                    : joinedIds.has(event.id.toString())
+                    ? 'Joined'
+                    : event.requiresApproval
+                    ? 'Request'
+                    : 'Join'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -279,5 +415,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  cardButtonDisabled: {
+    backgroundColor: 'rgba(156, 163, 175, 0.8)',
   },
 });

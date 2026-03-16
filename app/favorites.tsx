@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,61 @@ import {
   TouchableOpacity,
   Platform,
   Pressable,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { mockEvents } from '../lib/events';
+import { dataService, authService } from '../Backend/firebase';
 import { Event } from '../lib/types';
 import FloatingNavigation from '../components/FloatingNavigation';
 
 export default function FavoritesScreen() {
-  // Filter to show only favorited events
-  const favoriteEvents = mockEvents.filter((event) => event.isFavorite);
+  const [favoriteEvents, setFavoriteEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadFavorites();
+  }, []);
+
+  const loadFavorites = async () => {
+    try {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        Alert.alert('Authentication Required', 'Please sign in to view your favorites.', [
+          { text: 'OK', onPress: () => router.replace('/login') }
+        ]);
+        return;
+      }
+
+      // Get user's favorite event IDs
+      const favoriteIds = await dataService.getUserFavorites();
+      
+      // Fetch event details for each favorite
+      const eventPromises = favoriteIds.map(id => dataService.getEvent(id));
+      const events = await Promise.all(eventPromises);
+      
+      // Filter out null events (in case some were deleted)
+      const validEvents = events.filter(event => event !== null) as Event[];
+      setFavoriteEvents(validEvents);
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+      Alert.alert('Error', 'Failed to load favorites.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeFavorite = async (eventId: number | string) => {
+    try {
+      await dataService.removeFromFavorites(eventId.toString());
+      // Remove from local state
+      setFavoriteEvents(prev => prev.filter(e => e.id !== eventId));
+      Alert.alert('Removed', 'Event removed from favorites.');
+    } catch (error) {
+      console.error('Error removing favorite:', error);
+      Alert.alert('Error', 'Failed to remove from favorites.');
+    }
+  };
 
   const handleEventClick = (eventId: number | string) => {
     router.push({
@@ -42,6 +88,25 @@ export default function FavoritesScreen() {
         style={styles.eventImage}
         resizeMode="cover"
       />
+      
+      {/* Remove from favorites button */}
+      <TouchableOpacity
+        style={styles.removeButton}
+        onPress={(e) => {
+          e.stopPropagation();
+          Alert.alert(
+            'Remove Favorite',
+            'Remove this event from your favorites?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Remove', style: 'destructive', onPress: () => removeFavorite(item.id) }
+            ]
+          );
+        }}
+      >
+        <Text style={styles.removeButtonText}>✕</Text>
+      </TouchableOpacity>
+
       <View style={styles.eventContent}>
         <Text style={styles.eventTitle}>{item.title}</Text>
         
@@ -73,11 +138,23 @@ export default function FavoritesScreen() {
     </Pressable>
   );
 
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#6366F1" />
+        <Text style={{ marginTop: 16, color: '#666' }}>Loading favorites...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Favorites</Text>
+        {favoriteEvents.length > 0 && (
+          <Text style={styles.headerCount}>{favoriteEvents.length} events</Text>
+        )}
       </View>
 
       {/* Content */}
@@ -96,6 +173,12 @@ export default function FavoritesScreen() {
           <Text style={styles.emptyText}>
             Events you favorite will appear here
           </Text>
+          <TouchableOpacity
+            style={styles.exploreButton}
+            onPress={() => router.push('/home')}
+          >
+            <Text style={styles.exploreButtonText}>Explore Events</Text>
+          </TouchableOpacity>
         </View>
       )}
       
@@ -115,11 +198,16 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e5e5',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    textAlign: 'center',
+  },
+  headerCount: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
   },
   listContent: {
     padding: 16,
@@ -210,5 +298,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
+    marginBottom: 24,
+  },
+  exploreButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  exploreButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  removeButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  removeButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });

@@ -58,17 +58,38 @@ export default function CreateEventScreen() {
       }
 
       try {
-        const profile = await dataService.getCurrentUserProfile();
+        let profile = await dataService.getCurrentUserProfile();
+        
+        // If profile doesn't exist, create it (fallback for edge cases)
         if (!profile) {
-          Alert.alert('Error', 'Unable to load user profile. Please try again.');
-          router.back();
-          return;
+          console.log('Profile not found, creating default profile...');
+          profile = await dataService.createUserProfile(user.uid, {
+            email: user.email || '',
+            displayName: user.displayName || 'User',
+            photoURL: user.photoURL,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
         }
+        
         setUserProfile(profile);
       } catch (error) {
         console.error('Error loading profile:', error);
-        Alert.alert('Error', 'Failed to load your profile. Please try again.');
-        router.back();
+        // Don't redirect back, just show error and allow retry
+        Alert.alert(
+          'Profile Load Error', 
+          'There was an issue loading your profile. You can still try to create the event.',
+          [{ text: 'OK' }]
+        );
+        // Set a minimal profile to allow event creation
+        setUserProfile({
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || 'User',
+          photoURL: user.photoURL || null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
       } finally {
         setLoading(false);
       }

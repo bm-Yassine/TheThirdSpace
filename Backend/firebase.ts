@@ -17,13 +17,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDeExkfYP6q-4x2levBqNzvpYkHGC44X1Y",
-  authDomain: "thirdspace-8092b.firebaseapp.com",
-  projectId: "thirdspace-8092b",
-  storageBucket: "thirdspace-8092b.firebasestorage.app",
-  messagingSenderId: "258758943296",
-  appId: "1:258758943296:web:ea21ab65e4fc01aa52b5a5",
-  measurementId: "G-TP70FQ8CVT"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyDeExkfYP6q-4x2levBqNzvpYkHGC44X1Y',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'thirdspace-8092b.firebaseapp.com',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'thirdspace-8092b',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'thirdspace-8092b.firebasestorage.app',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '258758943296',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:258758943296:web:ea21ab65e4fc01aa52b5a5',
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || 'G-TP70FQ8CVT',
+  WebClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID || '258758943296-p4o6gvj7l0f178o8tcf7549qkkiggif1.apps.googleusercontent.com'
+};
+
+export const googleClientIds = {
+  webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID || firebaseConfig.WebClientId,
+  iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID || '',
+  androidClientId: process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID || '',
 };
 
 // Initialize Firebase
@@ -34,7 +41,7 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 // Proper RN persistence (web uses IndexedDB automatically)
 let auth: Auth;
-if (Platform.OS === 'web') {
+if (Platform.OS === 'web' || !getReactNativePersistence) {
   auth = getAuth(app);
 } else {
   auth = initializeAuth(app, {
@@ -103,6 +110,41 @@ export interface UserProfile {
   };
 }
 
+export interface UserCommitment {
+  eventId: string;
+  status: 'pending' | 'approved';
+  committedAt: Date | any;
+  reason?: 'approval' | 'waitlist' | 'direct';
+  paymentStatus?: 'pending' | 'completed';
+}
+
+export interface ConversationSummary {
+  id: string;
+  participantIds: string[];
+  otherUserId: string;
+  otherUserName: string;
+  otherUserPhotoURL?: string | null;
+  lastMessage?: string;
+  lastMessageSenderId?: string;
+  updatedAt?: Date | any;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  text: string;
+  createdAt: Date | any;
+}
+
+const dateToMillis = (value: any) => {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (typeof value?.seconds === 'number') return value.seconds * 1000;
+  return new Date(value).getTime() || 0;
+};
+
 // Firestore data functions
 export const dataService = {
   // User Profile functions
@@ -123,8 +165,27 @@ export const dataService = {
         rating: 0,
       },
     };
-    await setDoc(userRef, profile);
+    await setDoc(userRef, profile, { merge: true });
     return profile;
+  },
+
+  async ensureUserProfileFromAuthUser(user: User, displayNameOverride?: string) {
+    const existing = await this.getUserProfile(user.uid);
+    if (existing) return existing;
+
+    const derivedName =
+      displayNameOverride?.trim() ||
+      user.displayName ||
+      user.email?.split('@')[0] ||
+      'User';
+
+    return this.createUserProfile(user.uid, {
+      email: user.email || '',
+      displayName: derivedName,
+      photoURL: user.photoURL || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
   },
 
   async getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -149,6 +210,18 @@ export const dataService = {
     return this.getUserProfile(user.uid);
   },
 
+  async getUserByDisplayName(displayName: string): Promise<UserProfile | null> {
+    const userQuery = query(
+      collection(db, 'users'),
+      where('displayName', '==', displayName),
+      limit(1)
+    );
+    const result = await getDocs(userQuery);
+    if (result.empty) return null;
+    const first = result.docs[0];
+    return { uid: first.id, ...first.data() } as UserProfile;
+  },
+
   // Events collection
   async createEvent(eventData: DocumentData) {
     const user = auth.currentUser;
@@ -164,6 +237,18 @@ export const dataService = {
     };
 
     await setDoc(eventRef, eventWithMeta);
+
+    // Best-effort: keep profile stats in sync
+    const profile = await this.getUserProfile(user.uid);
+    if (profile) {
+      await this.updateUserProfile(user.uid, {
+        stats: {
+          ...profile.stats,
+          eventsCreated: (profile.stats?.eventsCreated || 0) + 1,
+        },
+      });
+    }
+
     return eventRef.id;
   },
 
@@ -234,17 +319,92 @@ export const dataService = {
     return querySnapshot.docs.map(doc => doc.data().eventId);
   },
 
+  async isFavorite(eventId: string) {
+    const user = auth.currentUser;
+    if (!user) return false;
+
+    const favoriteRef = doc(db, 'users', user.uid, 'favorites', eventId);
+    const favoriteDoc = await getDoc(favoriteRef);
+    return favoriteDoc.exists();
+  },
+
   // User commitments
-  async commitToEvent(eventId: string) {
+  async commitToEvent(eventId: string, options?: { paymentCompleted?: boolean }) {
     const user = auth.currentUser;
     if (!user) throw new Error('User not authenticated');
 
+    // Get user profile to add their info to the event
+    const userProfile = await this.getUserProfile(user.uid);
+    if (!userProfile) throw new Error('User profile not found');
+
+    // Get the event first to determine approval/waitlist status
+    const eventRef = doc(db, 'events', eventId);
+    const eventDoc = await getDoc(eventRef);
+    if (!eventDoc.exists()) throw new Error('Event not found');
+
+    const eventData = eventDoc.data();
+    const currentAttendees = eventData.attendees || 0;
+    const maxAttendees = eventData.maxAttendees || 0;
+    const isFull = maxAttendees > 0 && currentAttendees >= maxAttendees;
+    const requiresApproval = !!eventData.requiresApproval;
+
+    const status: UserCommitment['status'] = requiresApproval || isFull ? 'pending' : 'approved';
+    const reason: UserCommitment['reason'] = requiresApproval
+      ? 'approval'
+      : isFull
+      ? 'waitlist'
+      : 'direct';
+
+    // Add/update user's commitment
     const commitmentRef = doc(db, 'users', user.uid, 'commitments', eventId);
     await setDoc(commitmentRef, {
       eventId,
-      status: 'pending',
-      committedAt: new Date()
+      status,
+      reason,
+      paymentStatus: options?.paymentCompleted ? 'completed' : 'pending',
+      committedAt: new Date(),
     });
+
+    // Only auto-confirm attendees if approved immediately
+    if (status === 'approved') {
+      const attendeesList = eventData.attendeesList || [];
+
+      // Check if user is already in the attendees list
+      const alreadyAttending = attendeesList.some((a: any) => a.uid === user.uid);
+
+      if (!alreadyAttending) {
+        // Add user to attendees list
+        const newAttendee = {
+          uid: user.uid,
+          name: userProfile.displayName,
+          photoURL: userProfile.photoURL,
+          joinedAt: new Date(),
+          status: 'confirmed'
+        };
+        
+        attendeesList.push(newAttendee);
+        
+        // Update the event
+        await updateDoc(eventRef, {
+          attendees: currentAttendees + 1,
+          attendeesList: attendeesList,
+          updatedAt: new Date(),
+        });
+      }
+    }
+
+    // Best-effort stats update for joined events
+    const profile = await this.getUserProfile(user.uid);
+    if (profile) {
+      await this.updateUserProfile(user.uid, {
+        stats: {
+          ...profile.stats,
+          eventsJoined: (profile.stats?.eventsJoined || 0) + 1,
+        },
+      });
+    }
+
+    return { status, reason };
   },
 
   async getUserCommitments() {
@@ -254,5 +414,187 @@ export const dataService = {
     const commitmentsQuery = query(collection(db, 'users', user.uid, 'commitments'));
     const querySnapshot = await getDocs(commitmentsQuery);
     return querySnapshot.docs.map(doc => ({ eventId: doc.id, ...doc.data() }));
-  }
+  },
+
+  async getUserCommitment(eventId: string): Promise<UserCommitment | null> {
+    const user = auth.currentUser;
+    if (!user) return null;
+
+    const commitmentDoc = await getDoc(doc(db, 'users', user.uid, 'commitments', eventId));
+    if (!commitmentDoc.exists()) return null;
+    return commitmentDoc.data() as UserCommitment;
+  },
+
+  async cancelCommitment(eventId: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const commitmentRef = doc(db, 'users', user.uid, 'commitments', eventId);
+    const commitmentDoc = await getDoc(commitmentRef);
+    if (!commitmentDoc.exists()) return;
+
+    const commitment = commitmentDoc.data() as UserCommitment;
+    await deleteDoc(commitmentRef);
+
+    // If they had a confirmed spot, remove from event attendees
+    if (commitment.status === 'approved') {
+      const eventRef = doc(db, 'events', eventId);
+      const eventDoc = await getDoc(eventRef);
+      if (eventDoc.exists()) {
+        const eventData = eventDoc.data();
+        const attendeesList = (eventData.attendeesList || []).filter((a: any) => a.uid !== user.uid);
+        await updateDoc(eventRef, {
+          attendees: Math.max((eventData.attendees || 1) - 1, 0),
+          attendeesList,
+          updatedAt: new Date(),
+        });
+      }
+    }
+  },
+
+  async getOrCreateConversation(otherUserId: string): Promise<string> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    if (otherUserId === user.uid) throw new Error('Cannot create conversation with yourself');
+
+    const existingQuery = query(
+      collection(db, 'conversations'),
+      where('participantIds', 'array-contains', user.uid)
+    );
+    const existingDocs = await getDocs(existingQuery);
+    const existing = existingDocs.docs.find((d) => {
+      const ids = d.data().participantIds as string[];
+      return ids.includes(otherUserId);
+    });
+
+    if (existing) return existing.id;
+
+    const me = await this.getUserProfile(user.uid);
+    const other = await this.getUserProfile(otherUserId);
+
+    const conversationRef = doc(collection(db, 'conversations'));
+    await setDoc(conversationRef, {
+      id: conversationRef.id,
+      participantIds: [user.uid, otherUserId],
+      participantProfiles: {
+        [user.uid]: {
+          displayName: me?.displayName || user.displayName || user.email || 'User',
+          photoURL: me?.photoURL || user.photoURL || null,
+        },
+        [otherUserId]: {
+          displayName: other?.displayName || 'User',
+          photoURL: other?.photoURL || null,
+        },
+      },
+      lastMessage: '',
+      lastMessageSenderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    return conversationRef.id;
+  },
+
+  async getUserConversations(): Promise<ConversationSummary[]> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const conversationsQuery = query(
+      collection(db, 'conversations'),
+      where('participantIds', 'array-contains', user.uid)
+    );
+    const result = await getDocs(conversationsQuery);
+
+    const conversations: ConversationSummary[] = result.docs.map((snapshot) => {
+      const data = snapshot.data();
+      const participantIds: string[] = data.participantIds || [];
+      const otherUserId = participantIds.find((id) => id !== user.uid) || user.uid;
+      const otherProfile = data.participantProfiles?.[otherUserId] || {};
+
+      return {
+        id: snapshot.id,
+        participantIds,
+        otherUserId,
+        otherUserName: otherProfile.displayName || 'User',
+        otherUserPhotoURL: otherProfile.photoURL || null,
+        lastMessage: data.lastMessage || '',
+        lastMessageSenderId: data.lastMessageSenderId || '',
+        updatedAt: data.updatedAt,
+      };
+    });
+
+    return conversations.sort((a, b) => dateToMillis(b.updatedAt) - dateToMillis(a.updatedAt));
+  },
+
+  async getConversationMessages(conversationId: string): Promise<ChatMessage[]> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const conversationDoc = await getDoc(doc(db, 'conversations', conversationId));
+    if (!conversationDoc.exists()) throw new Error('Conversation not found');
+
+    const participantIds: string[] = conversationDoc.data().participantIds || [];
+    if (!participantIds.includes(user.uid)) throw new Error('Access denied');
+
+    const messagesQuery = query(
+      collection(db, 'conversations', conversationId, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+    const messages = await getDocs(messagesQuery);
+
+    return messages.docs.map((snapshot) => ({
+      id: snapshot.id,
+      conversationId,
+      ...(snapshot.data() as Omit<ChatMessage, 'id' | 'conversationId'>),
+    }));
+  },
+
+  async sendMessage(conversationId: string, text: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const trimmedText = text.trim();
+    if (!trimmedText) throw new Error('Message cannot be empty');
+
+    const conversationRef = doc(db, 'conversations', conversationId);
+    const conversationDoc = await getDoc(conversationRef);
+    if (!conversationDoc.exists()) throw new Error('Conversation not found');
+
+    const participantIds: string[] = conversationDoc.data().participantIds || [];
+    if (!participantIds.includes(user.uid)) throw new Error('Access denied');
+
+    const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'));
+    await setDoc(messageRef, {
+      senderId: user.uid,
+      text: trimmedText,
+      createdAt: new Date(),
+    });
+
+    await updateDoc(conversationRef, {
+      lastMessage: trimmedText,
+      lastMessageSenderId: user.uid,
+      updatedAt: new Date(),
+    });
+
+    return messageRef.id;
+  },
+
+  async recordPayment(eventId: string, amount: number, method: 'stripe' | 'card' | 'paypal', status: 'pending' | 'completed' = 'completed') {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const paymentRef = doc(collection(db, 'payments'));
+    await setDoc(paymentRef, {
+      id: paymentRef.id,
+      eventId,
+      payerUid: user.uid,
+      amount,
+      method,
+      status,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    return paymentRef.id;
+  },
 };

@@ -1,19 +1,12 @@
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../Backend/firebase';
 
 export default function Index() {
-  const [checking, setChecking] = useState(true);
-
   useEffect(() => {
-    const sub = onAuthStateChanged(auth, (user) => {
-      if (user) router.replace('/home');
-      else router.replace('/login');
-      setChecking(false);
-    });
-    return () => sub();
+    // Allow all users (including guests) to enter Home directly.
+    // Auth-only actions are gated at feature level.
+    router.replace('/home');
   }, []);
 
   return (
