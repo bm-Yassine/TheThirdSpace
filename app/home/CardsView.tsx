@@ -10,11 +10,12 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { dataService, authService } from '../../Backend/firebase';
 import { Event } from '../../lib/types';
-import { mockEvents } from '../../lib/events';
+import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -24,8 +25,9 @@ interface CardsViewProps {
 }
 
 export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialEvents = getCachedEventFeed()?.slice(0, 25) ?? [];
+  const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [loading, setLoading] = useState(initialEvents.length === 0);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
@@ -62,40 +64,41 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
   }, []);
 
   useEffect(() => {
+    const cachedEvents = getCachedEventFeed();
+    if (cachedEvents?.length) {
+      setEvents(cachedEvents.slice(0, 25));
+      setLoading(false);
+    }
+
+    let isMounted = true;
+
     const fetchEvents = async () => {
       try {
-        const fetchedEvents = await dataService.getEvents({ limit: 15 });
-        // Combine database events with demo events, avoiding duplicates by ID
-        const dbEventIds = new Set(fetchedEvents.map(e => e.id.toString()));
-        const demoEventsFiltered = mockEvents.filter(e => !dbEventIds.has(e.id.toString()));
-        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered]
-          .slice(0, 25)
-          .map((event: any) => ({
-            ...event,
-            organizer: {
-              uid: event.organizer?.uid || event.createdBy,
-              name: event.organizer?.name || 'Unknown Organizer',
-              avatar: event.organizer?.avatar || '👤',
-              photoURL: event.organizer?.photoURL || null,
-            },
-            imageUrl:
-              event.imageUrl ||
-              'https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=400&h=800&fit=crop',
-          }));
-        setEvents(combinedEvents as Event[]);
+        const combinedEvents = await preloadEventFeed({ limit: 30, maxItems: 30 });
+        if (isMounted) {
+          setEvents(combinedEvents.slice(0, 25));
+        }
       } catch (error) {
         console.error('Error fetching events:', error);
-        // Fallback to demo events if database fails
-        setEvents(mockEvents.slice(0, 20));
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchEvents();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const requireLogin = (message: string) => {
+    if (Platform.OS === 'web') {
+      router.push('/login');
+      return;
+    }
     Alert.alert('Login Required', message, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign In', onPress: () => router.push('/login') },
@@ -109,7 +112,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
     }
 
     router.push({
-      pathname: '../activity_detail',
+      pathname: '/activity_detail',
       params: { eventId: eventId.toString() }
     });
   };
@@ -121,7 +124,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
     }
 
     router.push({
-      pathname: '../organizer_info',
+      pathname: '/organizer_info',
       params: { organizerName, organizerUid: organizerUid || '' }
     });
   };
@@ -201,17 +204,73 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
   }
 
   return (
-    <ScrollView
-      style={styles.cardsScroll}
-      contentContainerStyle={styles.cardsContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {events.map((event) => (
-        <Pressable 
-          key={event.id} 
-          style={styles.cardContainer}
-          onPress={() => handleEventClick(event.id)}
-        >
+    <View style={{ flex: 1 }}>
+      {/* Top Right View Selector */}
+      <View style={styles.topRightControls}>
+        <View style={styles.viewSelectorContainer}>
+          <TouchableOpacity
+            style={[
+              styles.viewSelectorButton,
+              viewMode === 'discover' && styles.viewSelectorActive,
+            ]}
+            onPress={() => setViewMode('discover')}
+          >
+            <View style={styles.verticalRectangle}>
+              <View style={[
+                styles.verticalRectangleInner,
+                viewMode === 'discover' && styles.iconActive
+              ]} />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.viewSelectorButton,
+              viewMode === 'cards' && styles.viewSelectorActive,
+            ]}
+            onPress={() => setViewMode('cards')}
+          >
+            <View style={styles.horizontalRectangle}>
+              <View style={[
+                styles.horizontalRectangleInner,
+                viewMode === 'cards' && styles.iconActive
+              ]} />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.viewSelectorButton,
+              viewMode === 'map' && styles.viewSelectorActive,
+            ]}
+            onPress={() => setViewMode('map')}
+          >
+            <View style={styles.mapPinContainer}>
+              <View style={[
+                styles.mapPin,
+                viewMode === 'map' && styles.iconActive
+              ]}>
+                <View style={[
+                  styles.mapPinInner,
+                  viewMode === 'map' && styles.mapPinInnerActive
+                ]} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.cardsScroll}
+        contentContainerStyle={styles.cardsContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {events.map((event) => (
+          <Pressable 
+            key={event.id} 
+            style={styles.cardContainer}
+            onPress={() => handleEventClick(event.id)}
+          >
           {/* Blurred Background Image */}
           <Image
             source={{ uri: event.imageUrl }}
@@ -282,9 +341,10 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
               </TouchableOpacity>
             </View>
           </View>
-        </Pressable>
-      ))}
-    </ScrollView>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -321,6 +381,7 @@ const styles = StyleSheet.create({
   },
   cardsContent: {
     padding: 16,
+    paddingTop: 96,
     paddingBottom: 150,
   },
   cardContainer: {
@@ -418,5 +479,92 @@ const styles = StyleSheet.create({
   },
   cardButtonDisabled: {
     backgroundColor: 'rgba(156, 163, 175, 0.8)',
+  },
+  topRightControls: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    zIndex: 40,
+  },
+  viewSelectorContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 24,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  viewSelectorButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  viewSelectorActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+  },
+  verticalRectangle: {
+    width: 18,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verticalRectangleInner: {
+    width: 12,
+    height: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 3,
+  },
+  horizontalRectangle: {
+    width: 24,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  horizontalRectangleInner: {
+    width: 20,
+    height: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 3,
+  },
+  mapPinContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapPin: {
+    width: 16,
+    height: 20,
+    borderRadius: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 8,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    transform: [{ rotate: '-45deg' }],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapPinInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  mapPinInnerActive: {
+    backgroundColor: '#fff',
+  },
+  iconActive: {
+    borderColor: '#fff',
+    opacity: 1,
   },
 });

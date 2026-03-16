@@ -5,18 +5,19 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
-  Dimensions,
   ScrollView,
   Pressable,
   ActivityIndicator,
   Alert,
   Animated,
+  Platform,
 } from 'react-native';
 import { useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { dataService, authService } from '../../Backend/firebase';
 import { Event } from '../../lib/types';
-import { mockEvents } from '../../lib/events';
+import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
+import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
 
 interface DiscoverViewProps {
   currentIndex: number;
@@ -26,11 +27,23 @@ interface DiscoverViewProps {
 }
 
 export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, setViewMode }: DiscoverViewProps) {
+  const goToLogin = () => {
+    if (Platform.OS === 'web') {
+      router.push('/login');
+      return;
+    }
+    Alert.alert('Login Required', 'Please sign in to continue.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign In', onPress: () => router.push('/login') },
+    ]);
+  };
+
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
   const scrollViewRef = useRef<ScrollView>(null);
   const autoScrollTimer = useRef<any>(null);
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialEvents = getCachedEventFeed()?.slice(0, 15) ?? [];
+  const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [loading, setLoading] = useState(initialEvents.length === 0);
   const [isAutoScrolling, setIsAutoScrolling] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -85,40 +98,36 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     return () => unsubscribe();
   }, []);
 
-  // Fetch events on mount - combine database and demo events
+  // Fetch events on mount, while using cached feed for fast first paint
   useEffect(() => {
+    const cachedEvents = getCachedEventFeed();
+    if (cachedEvents?.length) {
+      setEvents(cachedEvents.slice(0, 15));
+      setLoading(false);
+    }
+
+    let isMounted = true;
+
     const fetchEvents = async () => {
       try {
-        const fetchedEvents = await dataService.getEvents({ limit: 10 });
-        // Combine database events with demo events, avoiding duplicates by ID
-        const dbEventIds = new Set(fetchedEvents.map(e => e.id.toString()));
-        const demoEventsFiltered = mockEvents.filter(e => !dbEventIds.has(e.id.toString()));
-        const combinedEvents = [...fetchedEvents, ...demoEventsFiltered]
-          .slice(0, 15)
-          .map((event: any) => ({
-            ...event,
-            organizer: {
-              uid: event.organizer?.uid || event.createdBy,
-              name: event.organizer?.name || 'Unknown Organizer',
-              avatar: event.organizer?.avatar || '👤',
-              photoURL: event.organizer?.photoURL || null,
-            },
-            imageUrl:
-              event.imageUrl ||
-              'https://images.unsplash.com/photo-1528605248644-14dd04022da1?w=400&h=800&fit=crop',
-          }));
-
-        setEvents(combinedEvents as Event[]);
+        const combinedEvents = await preloadEventFeed({ limit: 30, maxItems: 30 });
+        if (isMounted) {
+          setEvents(combinedEvents.slice(0, 15));
+        }
       } catch (error) {
         console.error('Error fetching events:', error);
-        // Fallback to demo events if database fails
-        setEvents(mockEvents.slice(0, 10));
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchEvents();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Auto-scroll every 7 seconds
@@ -156,19 +165,12 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
 
   const handleEventClick = (eventId: number | string) => {
     if (!isLoggedIn) {
-      Alert.alert(
-        'Login Required',
-        'Sign in to view event details and interact with events.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign In', onPress: () => router.push('/login') }
-        ]
-      );
+      goToLogin();
       return;
     }
 
     router.push({
-      pathname: '../activity_detail',
+      pathname: '/activity_detail',
       params: { eventId: eventId.toString() }
     });
   };
@@ -177,14 +179,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     const id = eventId.toString();
 
     if (!isLoggedIn) {
-      Alert.alert(
-        'Login Required',
-        'Please sign in to add events to your favorites.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign In', onPress: () => router.push('/login') }
-        ]
-      );
+      goToLogin();
       return;
     }
 
@@ -230,14 +225,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     const id = eventId.toString();
 
     if (!isLoggedIn) {
-      Alert.alert(
-        'Login Required',
-        'Please sign in to join events.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign In', onPress: () => router.push('/login') }
-        ]
-      );
+      goToLogin();
       return;
     }
 
@@ -279,24 +267,15 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
 
   const handleOrganizerClick = (organizerName: string, organizerUid?: string) => {
     if (!isLoggedIn) {
-      Alert.alert(
-        'Login Required',
-        'Sign in to view organizer profiles and send messages.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign In', onPress: () => router.push('/login') }
-        ]
-      );
+      goToLogin();
       return;
     }
 
     router.push({
-      pathname: '../organizer_info',
+      pathname: '/organizer_info',
       params: { organizerName, organizerUid: organizerUid || '' }
     });
   };
-
-  const currentEvent = events[currentIndex];
 
   if (loading) {
     return (
@@ -368,9 +347,41 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
 
                 {!isMuted && (
                   <Text style={styles.musicTitle}>
-                    🎵 Ambient Vibes
+                    Ambient Vibes
                   </Text>
                 )}
+
+                <View style={styles.audioControlsRow}>
+                  <TouchableOpacity
+                    style={styles.audioControlButton}
+                    onPress={() => setIsAutoScrolling(!isAutoScrolling)}
+                  >
+                    {isAutoScrolling ? (
+                      <Svg width={14} height={14} viewBox="0 0 24 24">
+                        <Rect x="6" y="5" width="4" height="14" fill="none" stroke="#fff" strokeWidth="2" />
+                        <Rect x="14" y="5" width="4" height="14" fill="none" stroke="#fff" strokeWidth="2" />
+                      </Svg>
+                    ) : (
+                      <Svg width={14} height={14} viewBox="0 0 24 24">
+                        <Polygon points="7,5 19,12 7,19" fill="none" stroke="#fff" strokeWidth="2" />
+                      </Svg>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.audioControlButton}
+                    onPress={() => setIsMuted(!isMuted)}
+                  >
+                    <Svg width={14} height={14} viewBox="0 0 24 24">
+                      <Path d="M3 10v4h4l5 4V6L7 10H3z" fill="none" stroke="#fff" strokeWidth="2" />
+                      {isMuted ? (
+                        <Line x1="16" y1="8" x2="22" y2="16" stroke="#fff" strokeWidth="2" />
+                      ) : (
+                        <Path d="M16 9c1.5 1.5 1.5 4.5 0 6" fill="none" stroke="#fff" strokeWidth="2" />
+                      )}
+                    </Svg>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Bottom Info and Actions */}
@@ -445,23 +456,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
 
       {/* Top Right Controls */}
       <View style={styles.topRightControls}>
-        {/* Pause/Play Button */}
-        <TouchableOpacity
-          style={styles.smallControlButton}
-          onPress={() => setIsAutoScrolling(!isAutoScrolling)}
-        >
-          <Text style={styles.smallControlIcon}>{isAutoScrolling ? '⏸' : '▶'}</Text>
-        </TouchableOpacity>
-
-        {/* Music Toggle Button */}
-        <TouchableOpacity
-          style={styles.smallControlButton}
-          onPress={() => setIsMuted(!isMuted)}
-        >
-          <Text style={styles.smallControlIcon}>{isMuted ? '🔇' : '🎵'}</Text>
-        </TouchableOpacity>
-
-        {/* View Selector with Water Droplet Effect */}
+        {/* View Selector */}
         <View style={styles.viewSelectorContainer}>
           {/* Vertical Rectangle - Discovery View */}
           <TouchableOpacity
@@ -545,7 +540,6 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         <View style={styles.animationContainer}>
           {[...Array(30)].map((_, i) => {
             const randomX = Math.random() * SCREEN_WIDTH;
-            const randomDelay = Math.random() * 200;
             const randomColor = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8'][Math.floor(Math.random() * 6)];
             
             return (
@@ -764,6 +758,22 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  audioControlsRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  audioControlButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   musicInfo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -893,19 +903,6 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 10,
     zIndex: 40,
-  },
-  smallControlButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  smallControlIcon: {
-    fontSize: 16,
   },
   viewSelectorContainer: {
     marginTop: 8,

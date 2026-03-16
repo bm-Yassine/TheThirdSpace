@@ -1,15 +1,10 @@
 // screens/LoginScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image, Alert,
+  View, Text, TextInput, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { authService, auth, dataService, googleClientIds } from '../Backend/firebase';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-
-WebBrowser.maybeCompleteAuthSession();
+import { authService } from '../Backend/firebase';
 
 export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -18,28 +13,6 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  // Google Auth setup (reads from EXPO_PUBLIC_* env vars when present)
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: googleClientIds.androidClientId || undefined,
-    iosClientId: googleClientIds.iosClientId || undefined,
-    webClientId: googleClientIds.webClientId || undefined,
-  });
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-      signInWithCredential(auth, credential)
-        .then(async (userCredential) => {
-          await dataService.ensureUserProfileFromAuthUser(userCredential.user);
-          router.replace('/home');
-        })
-        .catch((error: any) => {
-          setErr(mapAuthError(error?.code) || 'Google sign-in failed. Please try again.');
-        });
-    }
-  }, [response]);
 
   const toggle = () => {
     setMode((m) => (m === 'login' ? 'signup' : 'login'));
@@ -77,22 +50,10 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   const handleGoogleSignIn = () => {
-    const missingClientId =
-      Platform.OS === 'web'
-        ? !googleClientIds.webClientId
-        : Platform.OS === 'ios'
-        ? !googleClientIds.iosClientId
-        : !googleClientIds.androidClientId;
-
-    if (missingClientId) {
-      Alert.alert(
-        'Google Sign-In Not Configured',
-        'Missing Google OAuth client ID for this platform. Add EXPO_PUBLIC_WEB_CLIENT_ID / EXPO_PUBLIC_IOS_CLIENT_ID / EXPO_PUBLIC_ANDROID_CLIENT_ID.'
-      );
-      return;
-    }
-
-    promptAsync();
+    Alert.alert(
+      'Coming Soon',
+      'Google sign-in will be available soon after app verification is completed.'
+    );
   };
 
   const forgot = async () => {
@@ -115,7 +76,7 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
       <View style={styles.background}>
         <View style={styles.logoContainer}>
           <View style={styles.logo}>
-            <Text style={styles.logoText}>🎉</Text>
+            <Image source={require('../assets/logo.png')} style={styles.logoImage} resizeMode="contain" />
           </View>
           <Text style={styles.appName}>The Third Space</Text>
           <Text style={styles.tagline}>Discover Amazing Events</Text>
@@ -131,14 +92,16 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
           <TouchableOpacity
             style={styles.googleButton}
             onPress={handleGoogleSignIn}
-            disabled={!request}
           >
             <Image
               source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
               style={styles.googleIcon}
             />
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
+            <Text style={styles.googleButtonText}>Continue with Google (Soon)</Text>
           </TouchableOpacity>
+          <Text style={styles.comingSoonText}>
+            Google login is temporarily unavailable while verification is in progress.
+          </Text>
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
@@ -262,9 +225,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+    overflow: 'hidden',
   },
-  logoText: {
-    fontSize: 40,
+  logoImage: {
+    width: 56,
+    height: 56,
   },
   appName: {
     fontSize: 28,
@@ -333,6 +298,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
+  },
+  comingSoonText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   divider: {
     flexDirection: 'row',

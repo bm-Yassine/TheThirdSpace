@@ -7,8 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { dataService } from '../../Backend/firebase';
-import { mockEvents } from '../../lib/events';
+import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -18,28 +17,39 @@ interface MapViewProps {
 }
 
 export default function MapView({ viewMode, setViewMode }: MapViewProps) {
-  const [eventsCount, setEventsCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const cachedCount = getCachedEventFeed()?.length ?? 0;
+  const [eventsCount, setEventsCount] = useState(cachedCount);
+  const [loading, setLoading] = useState(cachedCount === 0);
 
   useEffect(() => {
+    const cachedEvents = getCachedEventFeed();
+    if (cachedEvents?.length) {
+      setEventsCount(cachedEvents.length);
+      setLoading(false);
+    }
+
+    let isMounted = true;
+
     const fetchEventsCount = async () => {
       try {
-        const events = await dataService.getEvents({ limit: 50 });
-        // Combine database events with demo events for total count
-        const dbEventIds = new Set(events.map(e => e.id.toString()));
-        const demoEventsFiltered = mockEvents.filter(e => !dbEventIds.has(e.id.toString()));
-        const totalEvents = events.length + demoEventsFiltered.length;
-        setEventsCount(totalEvents);
+        const events = await preloadEventFeed({ limit: 50, maxItems: 50 });
+        if (isMounted) {
+          setEventsCount(events.length);
+        }
       } catch (error) {
         console.error('Error fetching events:', error);
-        // Fallback to demo events count
-        setEventsCount(mockEvents.length);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchEventsCount();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (loading) {
