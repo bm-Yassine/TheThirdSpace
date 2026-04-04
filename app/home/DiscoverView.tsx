@@ -78,6 +78,8 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     controlTone === 'light' ? 'rgba(255, 255, 255, 0.22)' : 'rgba(17, 24, 39, 0.22)';
   const controlActiveColor =
     controlTone === 'light' ? 'rgba(255, 255, 255, 0.28)' : 'rgba(17, 24, 39, 0.18)';
+  const audioControlColor = '#FFFFFF';
+  const audioControlBorderColor = 'rgba(255, 255, 255, 0.42)';
 
   // Check authentication status
   useEffect(() => {
@@ -212,6 +214,31 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
 
     return () => loop.stop();
   }, [currentMusicTitle, shouldMarquee, marqueeAnimation, tickerOverflowDistance]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') {
+      return;
+    }
+
+    const rootStyle = document.documentElement.style;
+    const currentImageUrl = events[currentIndex]?.imageUrl;
+
+    if (currentImageUrl) {
+      rootStyle.setProperty('--discover-media-url', `url(${JSON.stringify(currentImageUrl)})`);
+    } else {
+      rootStyle.removeProperty('--discover-media-url');
+    }
+  }, [currentIndex, events]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') {
+      return;
+    }
+
+    return () => {
+      document.documentElement.style.removeProperty('--discover-media-url');
+    };
+  }, []);
 
   const handleScroll = (event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -595,7 +622,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
               style={[
                 styles.audioTickerText,
                 {
-                  color: controlStrokeColor,
+                  color: audioControlColor,
                   transform: [{ translateX: shouldMarquee ? marqueeTranslateX : 0 }],
                 },
               ]}
@@ -609,19 +636,19 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
               style={[
                 styles.audioControlButton,
                 {
-                  borderColor: controlBorderColor,
+                  borderColor: audioControlBorderColor,
                 },
               ]}
               onPress={() => setIsAutoScrolling(!isAutoScrolling)}
             >
               {isAutoScrolling ? (
                 <Svg width={14} height={14} viewBox="0 0 24 24">
-                  <Rect x="6" y="5" width="4" height="14" fill="none" stroke={controlStrokeColor} strokeWidth="2" />
-                  <Rect x="14" y="5" width="4" height="14" fill="none" stroke={controlStrokeColor} strokeWidth="2" />
+                  <Rect x="6" y="5" width="4" height="14" fill="none" stroke={audioControlColor} strokeWidth="2" />
+                  <Rect x="14" y="5" width="4" height="14" fill="none" stroke={audioControlColor} strokeWidth="2" />
                 </Svg>
               ) : (
                 <Svg width={14} height={14} viewBox="0 0 24 24">
-                  <Polygon points="7,5 19,12 7,19" fill="none" stroke={controlStrokeColor} strokeWidth="2" />
+                  <Polygon points="7,5 19,12 7,19" fill="none" stroke={audioControlColor} strokeWidth="2" />
                 </Svg>
               )}
             </TouchableOpacity>
@@ -630,17 +657,17 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
               style={[
                 styles.audioControlButton,
                 {
-                  borderColor: controlBorderColor,
+                  borderColor: audioControlBorderColor,
                 },
               ]}
               onPress={() => setIsMuted(!isMuted)}
             >
               <Svg width={14} height={14} viewBox="0 0 24 24">
-                <Path d="M3 10v4h4l5 4V6L7 10H3z" fill="none" stroke={controlStrokeColor} strokeWidth="2" />
+                <Path d="M3 10v4h4l5 4V6L7 10H3z" fill="none" stroke={audioControlColor} strokeWidth="2" />
                 {isMuted ? (
-                  <Line x1="16" y1="8" x2="22" y2="16" stroke={controlStrokeColor} strokeWidth="2" />
+                  <Line x1="16" y1="8" x2="22" y2="16" stroke={audioControlColor} strokeWidth="2" />
                 ) : (
-                  <Path d="M16 9c1.5 1.5 1.5 4.5 0 6" fill="none" stroke={controlStrokeColor} strokeWidth="2" />
+                  <Path d="M16 9c1.5 1.5 1.5 4.5 0 6" fill="none" stroke={audioControlColor} strokeWidth="2" />
                 )}
               </Svg>
             </TouchableOpacity>

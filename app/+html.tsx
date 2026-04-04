@@ -46,7 +46,27 @@ export default function Root({ children }: PropsWithChildren) {
                   body > div:first-child {
                     height: 100dvh;
                     min-height: 100dvh;
-                    background: #000000;
+                    background:
+                      linear-gradient(to bottom, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.46)),
+                      var(--discover-media-url, linear-gradient(180deg, #121212 0%, #0a0a0a 100%));
+                    background-size: cover;
+                    background-position: center;
+                    background-attachment: fixed;
+                  }
+
+                  html::before,
+                  body::before {
+                    content: '';
+                    position: fixed;
+                    inset: 0;
+                    pointer-events: none;
+                    z-index: -1;
+                    background: var(--discover-media-url, transparent);
+                    background-size: cover;
+                    background-position: center;
+                    filter: blur(18px) saturate(1.06);
+                    transform: scale(1.08);
+                    opacity: 0.9;
                   }
 
                   body {
