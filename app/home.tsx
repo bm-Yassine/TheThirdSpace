@@ -1,11 +1,5 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-} from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import FloatingNavigation from '../components/FloatingNavigation';
 import DiscoverView from './home/DiscoverView';
 import CardsView from './home/CardsView';
@@ -16,6 +10,7 @@ type ViewMode = 'discover' | 'cards' | 'map';
 export default function HomeScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('discover');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const navigationTone: 'light' | 'dark' = 'light';
 
   return (
     <View style={styles.container}>
@@ -42,7 +37,7 @@ export default function HomeScreen() {
       )}
 
       {/* Floating Navigation */}
-      <FloatingNavigation activeScreen="home" />
+      <FloatingNavigation activeScreen="home" tone={navigationTone} />
     </View>
   );
 }

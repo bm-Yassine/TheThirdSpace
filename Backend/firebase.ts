@@ -380,6 +380,7 @@ export const dataService = {
     if (!eventData) throw new Error('Event not found');
     const currentAttendees = eventData.attendees || 0;
     const maxAttendees = eventData.maxAttendees || 0;
+    const requiresPayment = Number(eventData.cost || 0) > 0;
     const isFull = maxAttendees > 0 && currentAttendees >= maxAttendees;
     const requiresApproval = !!eventData.requiresApproval;
 
@@ -396,7 +397,11 @@ export const dataService = {
       eventId,
       status,
       reason,
-      paymentStatus: options?.paymentCompleted ? 'completed' : 'pending',
+      paymentStatus: requiresPayment
+        ? options?.paymentCompleted
+          ? 'completed'
+          : 'pending'
+        : 'completed',
       committedAt: new Date(),
     });
 

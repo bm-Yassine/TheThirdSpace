@@ -93,6 +93,7 @@ export default function ChatsScreen() {
 
         if (otherUserIdParam) {
           const conversationId = await dataService.getOrCreateConversation(otherUserIdParam);
+          await loadConversations();
           setSelectedConversationId(conversationId);
           await loadMessages(conversationId);
           return;
@@ -237,7 +238,7 @@ export default function ChatsScreen() {
         </View>
       )}
 
-      <FloatingNavigation activeScreen="chats" />
+      <FloatingNavigation activeScreen="chats" tone="dark" />
     </KeyboardAvoidingView>
   );
 }

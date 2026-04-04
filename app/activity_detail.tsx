@@ -25,6 +25,7 @@ type Organizer = { uid?: string; name: string; avatar?: string };
 type Activity = {
   id: string;
   title: string;
+  description?: string;
   date: string;
   time: string;
   location: string;
@@ -64,6 +65,7 @@ export default function ActivityDetailScreen() {
         setActivity({
           id: String(eventData.id || eventId),
           title: eventData.title || 'Untitled Event',
+          description: eventData.description || '',
           date: eventData.date || '',
           time: eventData.time || '',
           location: eventData.location || '',
@@ -138,6 +140,14 @@ export default function ActivityDetailScreen() {
     if (!isLoggedIn || !activity) return requireLogin();
 
     if (commitment) {
+      if (commitment.paymentStatus === 'pending' && activity.cost > 0) {
+        router.push({
+          pathname: './payment',
+          params: { eventId: activity.id, amount: String(activity.cost), title: activity.title },
+        });
+        return;
+      }
+
       try {
         await dataService.cancelCommitment(activity.id);
         setCommitment(null);
@@ -196,7 +206,14 @@ export default function ActivityDetailScreen() {
   }
 
   const banner =
-    commitment?.status === 'approved'
+    commitment?.paymentStatus === 'pending'
+      ? {
+          Icon: AlertCircle,
+          title: 'Payment Required',
+          desc: 'Complete payment to confirm your participation.',
+          style: styles.bannerOrange,
+        }
+      : commitment?.status === 'approved'
       ? {
           Icon: CheckCircle,
           title: "You're Going!",
@@ -218,7 +235,9 @@ export default function ActivityDetailScreen() {
   const buttonText = !isLoggedIn
     ? 'Sign In to Join'
     : commitment
-    ? commitment.status === 'approved'
+    ? commitment.paymentStatus === 'pending' && activity.cost > 0
+      ? `Complete Payment - ${formatCurrency(activity.cost)}`
+      : commitment.status === 'approved'
       ? 'Cancel Registration'
       : 'Cancel Request'
     : activity.cost > 0
@@ -228,6 +247,10 @@ export default function ActivityDetailScreen() {
     : activity.maxAttendees > 0 && activity.attendees >= activity.maxAttendees
     ? 'Join Waitlist'
     : 'Join Activity';
+
+  const descriptionText =
+    activity.description?.trim() ||
+    `Join us for an amazing ${activity.title.toLowerCase()}! All skill levels welcome.`;
 
   return (
     <View style={styles.screen}>
@@ -268,7 +291,7 @@ export default function ActivityDetailScreen() {
 
         <View style={{ marginBottom: 14 }}>
           <Text style={styles.h4}>Description</Text>
-          <Text style={styles.body}>Join us for an amazing {activity.title.toLowerCase()}! All skill levels welcome.</Text>
+          <Text style={styles.body}>{descriptionText}</Text>
         </View>
 
         <View style={{ gap: 12, marginBottom: 16 }}>

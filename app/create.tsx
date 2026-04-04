@@ -10,10 +10,14 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
 import { dataService, authService, type UserProfile } from '../Backend/firebase';
+import { upsertCachedEvent } from '../lib/eventFeed';
+import * as ImagePicker from 'expo-image-picker';
+import type { Event, EventMedia, EventMusic } from '../lib/types';
 
 export default function CreateEventScreen() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -30,6 +34,10 @@ export default function CreateEventScreen() {
     cost: string;
     description: string;
     tags: string[];
+    musicTitle: string;
+    musicArtist: string;
+    musicStartAt: string;
+    media: EventMedia[];
   }>({
     title: '',
     type: '',
@@ -42,6 +50,10 @@ export default function CreateEventScreen() {
     cost: '',
     description: '',
     tags: [],
+    musicTitle: '',
+    musicArtist: '',
+    musicStartAt: '',
+    media: [],
   });
 
   const [newTag, setNewTag] = useState('');
@@ -135,7 +147,58 @@ export default function CreateEventScreen() {
     }));
   };
 
+  const pickMediaFromDevice = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Please allow media library access to add photos/videos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'],
+        allowsEditing: false,
+        allowsMultipleSelection: true,
+        quality: 0.9,
+        selectionLimit: 5,
+      });
+
+      if (result.canceled) return;
+
+      const selectedMedia: EventMedia[] = result.assets.map((asset) => ({
+        uri: asset.uri,
+        type: asset.type === 'video' ? 'video' : 'image',
+        width: asset.width,
+        height: asset.height,
+        durationMs: asset.duration ?? undefined,
+      }));
+
+      setFormData((prev) => ({
+        ...prev,
+        media: [...prev.media, ...selectedMedia].slice(0, 6),
+      }));
+    } catch (error) {
+      console.error('Error selecting media:', error);
+      Alert.alert('Error', 'Could not access media library right now.');
+    }
+  };
+
+  const removeMedia = (uri: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      media: prev.media.filter((item) => item.uri !== uri),
+    }));
+  };
+
   const handleSubmit = async () => {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      Alert.alert('Authentication Required', 'Please sign in to create an event.', [
+        { text: 'OK', onPress: () => router.replace('/login') },
+      ]);
+      return;
+    }
+
     if (!userProfile) {
       Alert.alert('Error', 'Unable to create event. Please try again.');
       return;
@@ -146,36 +209,70 @@ export default function CreateEventScreen() {
       return;
     }
 
-    if (!formData.title || !formData.description || !formData.location || !formData.time) {
+    if (!formData.title || !formData.description || !formData.location || !formData.time || !formData.type) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
     try {
+      const parsedCost = formData.cost ? parseFloat(formData.cost.replace('$', '')) || 0 : 0;
+      const maxAttendees = parseInt(formData.maxPeople) || undefined;
+      const minAttendees = parseInt(formData.minPeople) || undefined;
+      const parsedMusicStartAt = parseFloat(formData.musicStartAt);
+      const eventMusic: EventMusic | undefined = formData.musicTitle.trim()
+        ? {
+            title: formData.musicTitle.trim(),
+            artist: formData.musicArtist.trim() || undefined,
+            startAtSeconds:
+              Number.isFinite(parsedMusicStartAt) && parsedMusicStartAt >= 0
+                ? parsedMusicStartAt
+                : undefined,
+          }
+        : undefined;
+
+      const primaryImageFromMedia = formData.media.find((item) => item.type === 'image')?.uri;
+
       const eventData = {
         title: formData.title,
+        type: formData.type,
         description: formData.description,
         location: formData.location,
         time: formData.time,
+        timeFlexible: formData.timeFlexible,
         date: new Date().toLocaleDateString(), // You might want to add a date picker
         tags: formData.tags,
-        cost: formData.cost ? parseFloat(formData.cost.replace('$', '')) || 0 : 0,
+        cost: parsedCost,
         requiresApproval: !formData.openToAll,
-        maxAttendees: parseInt(formData.maxPeople) || undefined,
-        minAttendees: parseInt(formData.minPeople) || undefined,
+        maxAttendees,
+        minAttendees,
+        music: eventMusic,
+        media: formData.media,
         attendees: 0,
         organizer: { 
-          uid: userProfile.uid,
-          name: userProfile.displayName,
+          uid: currentUser.uid,
+          name:
+            userProfile.displayName ||
+            currentUser.displayName ||
+            currentUser.email ||
+            'User',
+          avatar: '👤',
           photoURL: userProfile.photoURL,
         },
-        imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop', // Default image
+        imageUrl:
+          primaryImageFromMedia ||
+          'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop', // Default image
       };
 
-      await dataService.createEvent(eventData);
+      const eventId = await dataService.createEvent(eventData);
+
+      const createdEvent: Event = {
+        ...eventData,
+        id: eventId,
+      };
+      upsertCachedEvent(createdEvent, { maxItems: 60 });
 
       Alert.alert('Success', 'Event created successfully!', [
-        { text: 'OK', onPress: () => router.push('/home') }
+        { text: 'OK', onPress: () => router.replace('/home') }
       ]);
     } catch (error) {
       console.error('Error creating event:', error);
@@ -216,8 +313,15 @@ export default function CreateEventScreen() {
 
       {/* Form */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.introCard}>
+          <Text style={styles.introTitle}>Design your event experience</Text>
+          <Text style={styles.introSubtitle}>
+            Add key details, soundtrack, and media to make your activity stand out.
+          </Text>
+        </View>
+
         {/* Activity Title */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Activity Title *</Text>
           <TextInput
             style={styles.input}
@@ -229,7 +333,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Activity Type */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Activity Type *</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.typeContainer}>
@@ -257,7 +361,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Time */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Time *</Text>
           <TextInput
             style={styles.input}
@@ -276,7 +380,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Meeting Point */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Meeting Point *</Text>
           <TextInput
             style={styles.input}
@@ -291,7 +395,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Number of People */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Number of People *</Text>
           <View style={styles.row}>
             <View style={styles.flex1}>
@@ -319,7 +423,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Access Type */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Access *</Text>
           <TouchableOpacity
             style={styles.radioRow}
@@ -342,7 +446,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Tags */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Tags * (minimum 3)</Text>
           <View style={styles.row}>
             <View style={styles.flex1}>
@@ -378,7 +482,7 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Cost */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
           <Text style={styles.label}>Cost</Text>
           <TextInput
             style={styles.input}
@@ -390,7 +494,64 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Description */}
-        <View style={styles.formGroup}>
+        <View style={styles.formCard}>
+          <Text style={styles.label}>Music (optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={formData.musicTitle}
+            onChangeText={(value) => handleInputChange('musicTitle', value)}
+            placeholder="Track title (e.g., Sunset Groove)"
+            placeholderTextColor="#999"
+          />
+          <TextInput
+            style={[styles.input, styles.inputSpacing]}
+            value={formData.musicArtist}
+            onChangeText={(value) => handleInputChange('musicArtist', value)}
+            placeholder="Artist / source"
+            placeholderTextColor="#999"
+          />
+          <TextInput
+            style={[styles.input, styles.inputSpacing]}
+            value={formData.musicStartAt}
+            onChangeText={(value) => handleInputChange('musicStartAt', value)}
+            placeholder="Start timestamp in seconds (e.g., 12.5)"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+          />
+          <Text style={styles.helperText}>
+            You can connect this to a copyright-free music library later.
+          </Text>
+        </View>
+
+        <View style={styles.formCard}>
+          <Text style={styles.label}>Media (photos / videos)</Text>
+          <TouchableOpacity style={styles.mediaPickerButton} onPress={pickMediaFromDevice}>
+            <Text style={styles.mediaPickerButtonText}>Choose from device</Text>
+          </TouchableOpacity>
+
+          {formData.media.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewRow}>
+              {formData.media.map((item) => (
+                <View key={item.uri} style={styles.mediaPreviewItem}>
+                  <Image source={{ uri: item.uri }} style={styles.mediaPreviewImage} resizeMode="cover" />
+                  <View style={styles.mediaBadge}>
+                    <Text style={styles.mediaBadgeText}>{item.type === 'video' ? 'Video' : 'Photo'}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.removeMediaButton}
+                    onPress={() => removeMedia(item.uri)}
+                  >
+                    <Text style={styles.removeMediaButtonText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          <Text style={styles.helperText}>{formData.media.length}/6 selected</Text>
+        </View>
+
+        {/* Description */}
+        <View style={styles.formCard}>
           <Text style={styles.label}>Description *</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
@@ -406,7 +567,7 @@ export default function CreateEventScreen() {
       </ScrollView>
       
       {/* Floating Navigation */}
-      <FloatingNavigation activeScreen="create" />
+      <FloatingNavigation activeScreen="create" tone="dark" />
     </View>
   );
 }
@@ -414,7 +575,7 @@ export default function CreateEventScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F3F4F6',
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
   },
   header: {
@@ -423,7 +584,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   headerButton: {
     fontSize: 16,
@@ -434,7 +596,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   createButtonEnabled: {
-    backgroundColor: '#000',
+    backgroundColor: '#111827',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -458,24 +620,52 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 80,
+    paddingBottom: 120,
+  },
+  introCard: {
+    backgroundColor: '#111827',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  introTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  introSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
   },
   formGroup: {
     marginBottom: 24,
   },
+  formCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     marginBottom: 8,
     color: '#000',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#D1D5DB',
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    fontSize: 15,
+    backgroundColor: '#F9FAFB',
+  },
+  inputSpacing: {
+    marginTop: 10,
   },
   textArea: {
     height: 100,
@@ -531,39 +721,100 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   addButton: {
-    backgroundColor: '#e5e5e5',
-    padding: 12,
-    borderRadius: 8,
+    width: 50,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    width: 50,
   },
   addButtonText: {
-    fontSize: 24,
-    color: '#666',
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 24,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 8,
+    marginTop: 10,
+    gap: 8,
   },
   tag: {
     flexDirection: 'row',
-    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    backgroundColor: '#E5E7EB',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
   },
   tagText: {
-    fontSize: 14,
-    color: '#333',
+    color: '#374151',
+    fontSize: 13,
+    fontWeight: '600',
   },
   tagRemove: {
-    fontSize: 16,
-    color: '#666',
+    color: '#6B7280',
+    fontSize: 14,
     marginLeft: 4,
+  },
+  mediaPickerButton: {
+    marginTop: 6,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPickerButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  mediaPreviewRow: {
+    marginTop: 12,
+  },
+  mediaPreviewItem: {
+    width: 118,
+    height: 118,
+    borderRadius: 12,
+    marginRight: 10,
+    overflow: 'hidden',
+    backgroundColor: '#E5E7EB',
+  },
+  mediaPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaBadge: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  mediaBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  removeMediaButton: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeMediaButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   typeContainer: {
     flexDirection: 'row',
@@ -574,16 +825,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#D1D5DB',
     backgroundColor: '#fff',
   },
   typeButtonSelected: {
-    backgroundColor: '#000',
-    borderColor: '#000',
+    backgroundColor: '#111827',
+    borderColor: '#111827',
   },
   typeText: {
     fontSize: 14,
-    color: '#666',
+    color: '#4B5563',
   },
   typeTextSelected: {
     color: '#fff',

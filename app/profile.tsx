@@ -16,13 +16,22 @@ import { authService, dataService, type UserProfile } from '../Backend/firebase'
 import type { Event } from '../lib/types';
 
 type TabKey = 'overview' | 'created' | 'joined';
+type JoinedEventItem = {
+  event: Event;
+  commitment: {
+    eventId: string;
+    status?: 'pending' | 'approved';
+    reason?: 'approval' | 'waitlist' | 'direct';
+    paymentStatus?: 'pending' | 'completed';
+  };
+};
 
 export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [createdEvents, setCreatedEvents] = useState<Event[]>([]);
-  const [joinedEvents, setJoinedEvents] = useState<Event[]>([]);
+  const [joinedEvents, setJoinedEvents] = useState<JoinedEventItem[]>([]);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -59,7 +68,15 @@ export default function ProfileScreen() {
 
         const joinedIds = commitments.map((c: any) => String(c.eventId));
         const joinedFetches = await Promise.all(joinedIds.map((id) => dataService.getEvent(id)));
-        const validJoined = joinedFetches.filter(Boolean) as Event[];
+        const validJoined = joinedFetches
+          .map((event, index) => {
+            if (!event) return null;
+            return {
+              event: event as Event,
+              commitment: commitments[index] as JoinedEventItem['commitment'],
+            };
+          })
+          .filter(Boolean) as JoinedEventItem[];
         setJoinedEvents(validJoined);
       } catch (error) {
         console.error('Error loading profile:', error);
@@ -279,11 +296,20 @@ export default function ProfileScreen() {
         {activeTab === 'joined' && (
           <View style={styles.listWrap}>
             {joinedEvents.length === 0 && <Text style={styles.muted}>You have not joined events yet.</Text>}
-            {joinedEvents.map((event) => (
+            {joinedEvents.map(({ event, commitment }) => (
               <Pressable key={String(event.id)} style={styles.cardRow} onPress={() => openEvent(event.id)}>
                 <View>
                   <Text style={styles.cardTitle}>{event.title}</Text>
                   <Text style={styles.cardMeta}>{event.date || 'TBD'} • {event.time || 'TBD'}</Text>
+                  <Text style={styles.cardStatus}>
+                    {commitment.paymentStatus === 'pending'
+                      ? 'Payment pending'
+                      : commitment.status === 'pending'
+                      ? commitment.reason === 'waitlist'
+                        ? 'Waitlist'
+                        : 'Pending approval'
+                      : 'Upcoming / confirmed'}
+                  </Text>
                 </View>
                 <ChevronRight size={16} color="#9ca3af" />
               </Pressable>
@@ -292,7 +318,7 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
-      <FloatingNavigation activeScreen="profile" />
+      <FloatingNavigation activeScreen="profile" tone="dark" />
     </View>
   );
 }
@@ -431,4 +457,5 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
   cardMeta: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  cardStatus: { fontSize: 12, color: '#2563eb', marginTop: 4, fontWeight: '600' },
 });

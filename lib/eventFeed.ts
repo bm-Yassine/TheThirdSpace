@@ -38,6 +38,23 @@ const mergeWithMockEvents = (dbEvents: Event[], maxItems: number) => {
 
 export const getCachedEventFeed = () => cachedEvents;
 
+export const invalidateEventFeedCache = () => {
+  cachedEvents = null;
+  cachedAt = 0;
+};
+
+export const upsertCachedEvent = (event: Event, options?: { maxItems?: number }) => {
+  const maxItems = options?.maxItems ?? 30;
+  const normalizedEvent = normalizeEvent(event);
+  const existing = cachedEvents || [];
+  const withoutCurrent = existing.filter(
+    (item) => String(item.id) !== String(normalizedEvent.id)
+  );
+
+  cachedEvents = [normalizedEvent, ...withoutCurrent].slice(0, maxItems);
+  cachedAt = Date.now();
+};
+
 export async function preloadEventFeed(
   options?: { force?: boolean; limit?: number; maxItems?: number }
 ): Promise<Event[]> {

@@ -190,7 +190,7 @@ export default function FavoritesScreen() {
       )}
       
       {/* Floating Navigation */}
-      <FloatingNavigation activeScreen="favorites" />
+      <FloatingNavigation activeScreen="favorites" tone="dark" />
     </View>
   );
 }

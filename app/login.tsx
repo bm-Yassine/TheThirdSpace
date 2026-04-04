@@ -4,7 +4,7 @@ import {
   View, Text, TextInput, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { authService } from '../Backend/firebase';
+import { authService, dataService } from '../Backend/firebase';
 
 export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -34,11 +34,22 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
     setBusy(true);
     setErr(null);
     try {
+      let authUser = null;
       if (mode === 'login') {
-        await authService.signIn(email.trim(), password);
+        const credential = await authService.signIn(email.trim(), password);
+        authUser = credential.user;
       } else {
-        await authService.signUp(email.trim(), password, displayName.trim());
+        const credential = await authService.signUp(email.trim(), password, displayName.trim());
+        authUser = credential.user;
       }
+
+      if (authUser) {
+        await dataService.ensureUserProfileFromAuthUser(
+          authUser,
+          mode === 'signup' ? displayName.trim() : undefined
+        );
+      }
+
       router.replace('/home');
     } catch (e: any) {
       console.log('Auth error:', e); // Debug log
