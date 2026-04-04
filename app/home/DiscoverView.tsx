@@ -228,6 +228,11 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     } else {
       rootStyle.removeProperty('--discover-media-url');
     }
+
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) {
+      themeColorMeta.setAttribute('content', '#101114');
+    }
   }, [currentIndex, events]);
 
   useEffect(() => {

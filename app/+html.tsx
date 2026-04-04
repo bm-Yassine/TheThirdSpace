@@ -12,7 +12,7 @@ export default function Root({ children }: PropsWithChildren) {
           content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
         />
 
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#101114" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
@@ -28,7 +28,7 @@ export default function Root({ children }: PropsWithChildren) {
               }
 
               body {
-                background: #ffffff;
+                background: #101114;
               }
 
               #root,
@@ -47,7 +47,7 @@ export default function Root({ children }: PropsWithChildren) {
                     height: 100dvh;
                     min-height: 100dvh;
                     background:
-                      linear-gradient(to bottom, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.46)),
+                      linear-gradient(to bottom, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.38)),
                       var(--discover-media-url, linear-gradient(180deg, #121212 0%, #0a0a0a 100%));
                     background-size: cover;
                     background-position: center;
@@ -60,13 +60,20 @@ export default function Root({ children }: PropsWithChildren) {
                     position: fixed;
                     inset: 0;
                     pointer-events: none;
-                    z-index: -1;
+                    z-index: 0;
                     background: var(--discover-media-url, transparent);
                     background-size: cover;
                     background-position: center;
-                    filter: blur(18px) saturate(1.06);
-                    transform: scale(1.08);
-                    opacity: 0.9;
+                    filter: blur(20px) saturate(1.08);
+                    transform: scale(1.1);
+                    opacity: 0.92;
+                  }
+
+                  #root,
+                  #expo-router-root,
+                  body > div:first-child {
+                    position: relative;
+                    z-index: 1;
                   }
 
                   body {
