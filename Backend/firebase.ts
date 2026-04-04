@@ -239,6 +239,36 @@ export const dataService = {
     return this.getUserProfile(user.uid);
   },
 
+  async getCurrentUserCreatedEvents(limitCount = 50) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    try {
+      const refsSnapshot = await getDocs(collection(db, 'users', user.uid, 'createdEvents'));
+      const refs = refsSnapshot.docs
+        .map((snapshot) => {
+          const data = snapshot.data() as any;
+          return {
+            eventId: String(data?.eventId || snapshot.id),
+            createdAt: data?.createdAt,
+          };
+        })
+        .sort((a, b) => dateToMillis(b.createdAt) - dateToMillis(a.createdAt))
+        .slice(0, limitCount);
+
+      if (refs.length > 0) {
+        const events = await Promise.all(refs.map((ref) => this.getEvent(ref.eventId)));
+        return events.filter(Boolean);
+      }
+    } catch {
+      // fall through to organizer-based query
+    }
+
+    // Backward compatibility: if reference collection is empty/missing,
+    // fetch directly from events created by this user.
+    return this.getEvents({ organizerId: user.uid, limit: limitCount });
+  },
+
   async getUserByDisplayName(displayName: string): Promise<UserProfile | null> {
     const userQuery = query(
       collection(db, 'users'),
@@ -267,6 +297,13 @@ export const dataService = {
 
     await setDoc(eventRef, eventWithMeta);
 
+    // Keep a direct reference for profile "created events" lookups
+    await setDoc(doc(db, 'users', user.uid, 'createdEvents', eventRef.id), {
+      eventId: eventRef.id,
+      createdAt: eventWithMeta.createdAt,
+      updatedAt: eventWithMeta.updatedAt,
+    });
+
     // Best-effort: keep profile stats in sync
     const profile = await this.getUserProfile(user.uid);
     if (profile) {
@@ -282,18 +319,36 @@ export const dataService = {
   },
 
   async getEvents(filters?: { organizerId?: string; tags?: string[]; limit?: number }) {
-    let q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
+    // NOTE:
+    // Avoid hard-depending on composite indexes here. We'll sort client-side,
+    // and only use the strict ordered query when organizer filter isn't applied.
+    try {
+      let q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
 
-    if (filters?.organizerId) {
-      q = query(q, where('createdBy', '==', filters.organizerId));
+      if (filters?.organizerId) {
+        q = query(collection(db, 'events'), where('createdBy', '==', filters.organizerId));
+      }
+
+      if (filters?.limit) {
+        q = query(q, limit(filters.limit));
+      }
+
+      const querySnapshot = await getDocs(q);
+      const events = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const sorted = events.sort((a: any, b: any) => dateToMillis(b.createdAt) - dateToMillis(a.createdAt));
+      return filters?.limit ? sorted.slice(0, filters.limit) : sorted;
+    } catch (error) {
+      // Fallback for index/rules mismatches: use the simplest query possible
+      let fallbackQuery = query(collection(db, 'events'));
+      if (filters?.organizerId) {
+        fallbackQuery = query(fallbackQuery, where('createdBy', '==', filters.organizerId));
+      }
+
+      const querySnapshot = await getDocs(fallbackQuery);
+      const events = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const sorted = events.sort((a: any, b: any) => dateToMillis(b.createdAt) - dateToMillis(a.createdAt));
+      return filters?.limit ? sorted.slice(0, filters.limit) : sorted;
     }
-
-    if (filters?.limit) {
-      q = query(q, limit(filters.limit));
-    }
-
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
 
   async getEvent(eventId: string) {
@@ -391,8 +446,11 @@ export const dataService = {
       ? 'waitlist'
       : 'direct';
 
-    // Add/update user's commitment
     const commitmentRef = doc(db, 'users', user.uid, 'commitments', eventId);
+    const existingCommitment = await getDoc(commitmentRef);
+    const isFirstCommitment = !existingCommitment.exists();
+
+    // Add/update user's commitment
     await setDoc(commitmentRef, {
       eventId,
       status,
@@ -403,6 +461,20 @@ export const dataService = {
           : 'pending'
         : 'completed',
       committedAt: new Date(),
+    });
+
+    // Keep a dedicated joined-events reference for profile "joined events" list
+    await setDoc(doc(db, 'users', user.uid, 'joinedEvents', eventId), {
+      eventId,
+      status,
+      reason,
+      paymentStatus: requiresPayment
+        ? options?.paymentCompleted
+          ? 'completed'
+          : 'pending'
+        : 'completed',
+      committedAt: new Date(),
+      updatedAt: new Date(),
     });
 
     // Only auto-confirm attendees if approved immediately
@@ -433,15 +505,17 @@ export const dataService = {
       }
     }
 
-    // Best-effort stats update for joined events
-    const profile = await this.getUserProfile(user.uid);
-    if (profile) {
-      await this.updateUserProfile(user.uid, {
-        stats: {
-          ...profile.stats,
-          eventsJoined: (profile.stats?.eventsJoined || 0) + 1,
-        },
-      });
+    // Best-effort stats update for joined events (only on first commitment)
+    if (isFirstCommitment) {
+      const profile = await this.getUserProfile(user.uid);
+      if (profile) {
+        await this.updateUserProfile(user.uid, {
+          stats: {
+            ...profile.stats,
+            eventsJoined: (profile.stats?.eventsJoined || 0) + 1,
+          },
+        });
+      }
     }
 
     return { status, reason };
@@ -475,6 +549,7 @@ export const dataService = {
 
     const commitment = commitmentDoc.data() as UserCommitment;
     await deleteDoc(commitmentRef);
+    await deleteDoc(doc(db, 'users', user.uid, 'joinedEvents', eventId));
 
     // If they had a confirmed spot, remove from event attendees
     if (commitment.status === 'approved') {
@@ -489,6 +564,17 @@ export const dataService = {
           updatedAt: new Date(),
         });
       }
+    }
+
+    // Best-effort stats decrement
+    const profile = await this.getUserProfile(user.uid);
+    if (profile) {
+      await this.updateUserProfile(user.uid, {
+        stats: {
+          ...profile.stats,
+          eventsJoined: Math.max((profile.stats?.eventsJoined || 1) - 1, 0),
+        },
+      });
     }
   },
 

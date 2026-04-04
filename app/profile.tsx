@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { LogOut, ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import FloatingNavigation from '../components/FloatingNavigation';
 import { authService, dataService, type UserProfile } from '../Backend/firebase';
 import type { Event } from '../lib/types';
@@ -38,56 +39,62 @@ export default function ProfileScreen() {
   const [editBio, setEditBio] = useState('');
   const [editInterests, setEditInterests] = useState('');
 
-  useEffect(() => {
-    const loadProfileData = async () => {
-      try {
-        const user = authService.getCurrentUser();
-        if (!user) {
-          Alert.alert('Authentication Required', 'Please sign in to view your profile.', [
-            { text: 'OK', onPress: () => router.replace('/login') },
-          ]);
-          return;
-        }
-
-        let me = await dataService.getCurrentUserProfile();
-        if (!me) {
-          me = await dataService.ensureUserProfileFromAuthUser(user);
-        }
-        setProfile(me);
-
-        const [created, commitments] = await Promise.all([
-          dataService.getEvents({ organizerId: user.uid, limit: 50 }),
-          dataService.getUserCommitments(),
+  const loadProfileData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        Alert.alert('Authentication Required', 'Please sign in to view your profile.', [
+          { text: 'OK', onPress: () => router.replace('/login') },
         ]);
-
-        const normalizedCreated = (created as Event[]).map((e) => ({
-          ...e,
-          organizer: e.organizer || { uid: user.uid, name: me?.displayName || 'You', avatar: '👤' },
-        }));
-        setCreatedEvents(normalizedCreated);
-
-        const joinedIds = commitments.map((c: any) => String(c.eventId));
-        const joinedFetches = await Promise.all(joinedIds.map((id) => dataService.getEvent(id)));
-        const validJoined = joinedFetches
-          .map((event, index) => {
-            if (!event) return null;
-            return {
-              event: event as Event,
-              commitment: commitments[index] as JoinedEventItem['commitment'],
-            };
-          })
-          .filter(Boolean) as JoinedEventItem[];
-        setJoinedEvents(validJoined);
-      } catch (error) {
-        console.error('Error loading profile:', error);
-        Alert.alert('Error', 'Failed to load profile data.');
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
 
-    loadProfileData();
+      let me = await dataService.getCurrentUserProfile();
+      if (!me) {
+        me = await dataService.ensureUserProfileFromAuthUser(user);
+      }
+      setProfile(me);
+
+      const [created, commitments] = await Promise.all([
+        dataService.getCurrentUserCreatedEvents(50),
+        dataService.getUserCommitments(),
+      ]);
+
+      const normalizedCreated = (created as Event[]).map((e) => ({
+        ...e,
+        organizer: e.organizer || { uid: user.uid, name: me?.displayName || 'You', avatar: '👤' },
+      }));
+      setCreatedEvents(normalizedCreated);
+
+      const sortedCommitments = [...(commitments as any[])].sort(
+        (a, b) => new Date(b.committedAt || 0).getTime() - new Date(a.committedAt || 0).getTime()
+      );
+      const joinedIds = sortedCommitments.map((c) => String(c.eventId));
+      const joinedFetches = await Promise.all(joinedIds.map((id) => dataService.getEvent(id)));
+      const validJoined = joinedFetches
+        .map((event, index) => {
+          if (!event) return null;
+          return {
+            event: event as Event,
+            commitment: sortedCommitments[index] as JoinedEventItem['commitment'],
+          };
+        })
+        .filter(Boolean) as JoinedEventItem[];
+      setJoinedEvents(validJoined);
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      Alert.alert('Error', 'Failed to load profile data.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileData();
+    }, [loadProfileData])
+  );
 
   const stats = useMemo(() => {
     return {
