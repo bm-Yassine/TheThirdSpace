@@ -1,92 +1,154 @@
-# Welcome to your Expo app 👋
+# 🌐 The Third Space
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**A social event-discovery platform** — find, create, and join local activities with people around you.
 
-## Get started
+> 🔗 **Live:** [https://thethirdspaceapp.com](https://thethirdspaceapp.com)  
+> 📋 **Full handover docs:** see `../HANDOVER.md`, `../SERVICES_AND_KEYS.md`, `../DEVELOPER_GUIDE.md`
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## 🎯 What Is It?
 
-2. Start the app
+The Third Space is a mobile-first app (also accessible on web) where users can:
 
-   ```bash
-   npx expo start
-   ```
+- **Discover** events and activities near them — parties, sports, arts, food nights, outdoor meetups
+- **Join** events — free, paid (Stripe), or approval-based
+- **Create** their own events with photos, music, tags, and capacity limits
+- **Favorite** events they're interested in
+- **Chat** directly with event organizers and other users
+- **Manage** their profile, interests, events joined, and events created
 
-In the output, you'll find options to open the app in a
+The name "Third Space" refers to the sociological concept of places beyond home (first space) and work (second space) — the community spaces where social life happens.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🏗️ Tech Stack
 
-## Get a fresh project
+| Layer | Technology |
+|---|---|
+| Framework | Expo SDK 54 / React Native 0.81.5 |
+| Navigation | Expo Router v6 (file-based) |
+| Language | TypeScript |
+| Backend / Database | Firebase (Firestore + Auth + Storage) |
+| Web Hosting | Vercel (static export) |
+| Domain | thethirdspaceapp.com |
+| Maps | react-native-maps (installed, partial) |
+| Payments | Stripe (UI done, real integration pending) |
+| AI/Recommendations | n8n (planned, not yet integrated) |
 
-When you're ready, run:
+---
+
+## ✅ Current Status (~60% complete)
+
+### Working
+- ✅ Email/password login, signup, forgot password
+- ✅ User profile creation, editing (name, bio, interests)
+- ✅ Event discovery: Discover view (full-screen) + Cards view (grid) + Map view (shell)
+- ✅ Event creation with type, tags, music metadata, media picker, cost, capacity
+- ✅ Join events: direct join / approval request / waitlist logic
+- ✅ Favorite events (persisted to Firestore)
+- ✅ Activity detail screen with commitment state banners
+- ✅ Payment screen UI (simulated — no real Stripe yet)
+- ✅ Direct messaging between users
+- ✅ Organizer public profile
+- ✅ Profile screen: overview, created events, joined events, stats
+- ✅ Animated floating navigation bar (auth-aware)
+- ✅ Deployed to Vercel with custom domain
+
+### Pending / In Progress
+- ⚠️ Google OAuth (UI ready, needs real OAuth Client IDs)
+- ⚠️ Real Stripe payment processing (backend + SDK integration needed)
+- ⚠️ Map view with real event pins (react-native-maps installed)
+- ⚠️ Firestore security rules (currently open/dev mode)
+- ⚠️ Profile photo upload (Firebase Storage configured, not wired up)
+- ⚠️ Real-time chat (currently one-shot fetch, needs onSnapshot)
+- ❌ n8n AI recommendation engine
+- ❌ Push notifications
+- ❌ Post-event rating (screen stub exists)
+- ❌ Copyright-free music library for event creation
+
+---
+
+## 🚀 Quick Start (Development)
 
 ```bash
-npm run reset-project
+cd TheThirdSpace
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Press `w` to open in browser, `i` for iOS simulator, `a` for Android.
 
-## Learn more
+See `../DEVELOPER_GUIDE.md` for full setup, environment variables, and task-by-task implementation guides.
 
-To learn more about developing your project with Expo, look at the following resources:
+---
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## 📁 Project Structure
 
-## Join the community
+```
+TheThirdSpace/
+├── app/                    ← All screens (Expo Router file-based)
+│   ├── _layout.tsx         ← Root layout + app startup (preloads event feed)
+│   ├── index.tsx           ← Entry → redirects to /home
+│   ├── login.tsx           ← Login / Signup
+│   ├── home.tsx            ← Home shell (Discover / Cards / Map views)
+│   ├── home/
+│   │   ├── DiscoverView.tsx
+│   │   ├── CardsView.tsx
+│   │   └── MapView.tsx
+│   ├── create.tsx          ← Event creation form
+│   ├── activity_detail.tsx ← Event detail, join, favorite, pay
+│   ├── favorites.tsx
+│   ├── chats.tsx           ← Conversations + messaging
+│   ├── profile.tsx         ← User profile + tabs
+│   ├── organizer_info.tsx  ← Organizer public page
+│   └── payment.tsx         ← Payment screen (simulated)
+├── Backend/
+│   └── firebase.ts         ← All Firebase logic (auth + Firestore + types)
+├── lib/
+│   ├── types.tsx           ← TypeScript types (Event, Organizer, etc.)
+│   ├── events.tsx          ← Mock seed events (dev fallback)
+│   └── eventFeed.ts        ← Feed cache + Firebase/mock merge logic
+├── components/
+│   └── FloatingNavigation.tsx ← Animated bottom nav bar
+├── constants/
+│   └── theme.ts
+└── assets/                 ← Logo, icons, images
+```
 
-Join our community of developers creating universal apps.
+---
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 🔑 Services Used
 
+| Service | Purpose |
+|---|---|
+| Firebase (`thirdspace-8092b`) | Auth, Firestore DB, Storage |
+| Vercel | Web hosting, CI/CD |
+| thethirdspaceapp.com | Custom domain |
+| Google Cloud Console | OAuth Client IDs |
+| Stripe | Payments (setup needed) |
+| n8n | AI recommendations (future) |
 
-TO-DO
+> All credentials and configuration values: **`../SERVICES_AND_KEYS.md`**
 
-** Allow payments to book a place in the event through stripe. which allows to send money between users.
+---
 
-** Use Firebase or Clerk to manage authentication and loggin and signup for users.
+## 🎨 Design Vision
 
-** Use n8n to create and manage models that suggest the ordering and suggestions of the events according to profile, interests, previous events, weather, mood, personality ...
+- **Discover view:** Full-screen immersive event cards, swipeable, edge-to-edge with blur overlays
+- **Navigation:** Floating animated pill nav bar that gently bobs up and down, adapts color to background
+- **Event creation:** Rich form with music track, photos/videos, capacity, access control
+- **Tone:** Dark, minimal, bold — `#111827` near-black with `#6366F1` indigo accents
 
-** Make logo.png the website's logo
+---
 
-** Make smooth discover view page, with a lot of animations and user interaction visuals
+## 📋 Handover Documentation
 
-** Add the map for finding the events using a map service, and pins with the location of each event, maybe can show maps only per city you are located in, and can change city if needed.
+The full handover package lives in the parent directory:
 
-Currently working on 
-1) Production OAuth setup
-- Replace remaining placeholder Google OAuth IDs with real ios/android/web IDs.
-- Add Vercel production domain in Firebase Auth authorized domains : 
-
-2) Vercel deployment hardening
-- Confirm Vercel project uses:
-  - Build command: npx expo export --platform web
-  - Output directory: dist
-  - Rewrites from vercel.json are active
-
-3) App package updates (recommended by Expo CLI)
-- Align Expo-related packages to expected SDK-compatible versions listed by expo start.
-
-4) Stripe real integration
-- Replace simulated payment with actual Stripe checkout + webhook/confirmation flow.
-
-5) Firestore security rules and indexes
-- Lock writes to authenticated users and resource owners.
-- Add required indexes for event/conversation queries.
-
-6) Profile creation and editing screen.
-
-7) Map View, opens a similar to google maps view with pins on the location of the activities and events in the city.
-
-8) Choose a song and background photo/video when creating an event.
+| File | Contents |
+|---|---|
+| `../HANDOVER.md` | Project overview, architecture, data schema, feature progress chart, priorities |
+| `../SERVICES_AND_KEYS.md` | All Firebase/Vercel/OAuth/Stripe keys, Firestore security rules, indexes |
+| `../DEVELOPER_GUIDE.md` | Local setup, codebase tour, task-by-task implementation guides, sprint plan |
+| `../GOOGLE_OAUTH_SETUP.md` | Step-by-step Google OAuth setup guide |

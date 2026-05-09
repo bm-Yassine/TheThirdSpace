@@ -1,0 +1,64 @@
+Missing:
+ User profile documents (e.g. users/{uid} with name, avatar, etc.) and using that profile in the UI.
+ No organizer profile screen backed by Firestore yet (organizer info is name-only, coming from event data).
+
+Notes : 
+androidClientId: '258758943296-abcdefghijklmnop.apps.googleusercontent.com', 
+iosClientId: '258758943296-abcdefghijklmnop.apps.googleusercontent.com', 
+webClientId: '258758943296-p4o6gvj7l0f178o8tcf7549qkkiggif1.apps.googleusercontent.com',
+
+Custom domain available and online through vercel: https://thethirdspaceapp.com
+
+
+//TO-DO
+
+Visually :
+Phone discovery view:
+- make the background continuous to the iphone's battery section on top and website section in bottom with blur
+- slightly lower the navigation buttons and keep the animation, 
+- navigation and tab view buttons change the design's color between white and black accordin to the backgroun so they stay visible
+- put the tab view buttons a bit higher on the upper right corner, and the music title with buttons on the right side of the screen in the same line as the organizer info
+
+event creation:
+- Add music choice selection with starting timestamp ( in the future adding copyright free music library)
+- Add media ( photos / videos ) selection from a library / from the user's device
+- redesign event creation 
+
+** Allow payments to book a place in the event through stripe. which allows to send money between users.
+** Use Firebase or Clerk to manage authentication and loggin and signup for users.
+** Use n8n to create and manage models that suggest the ordering and suggestions of the events according to profile, interests, previous events, weather, mood, personality ...
+** Make smooth discover view page, with a lot of animations and user interaction visuals
+** Add the map for finding the events using a map service, and pins with the location of each event, maybe can show maps only per city you are located in, and can change city if needed.
+
+Current high-priority TODOs
+1) Production OAuth setup
+- Replace remaining placeholder Google OAuth IDs with real ios/android/web IDs.
+- Add Vercel production domain in Firebase Auth authorized domains : 
+
+2) Vercel deployment hardening
+- Confirm Vercel project uses:
+  - Build command: npx expo export --platform web
+  - Output directory: dist
+  - Rewrites from vercel.json are active
+
+3) App package updates (recommended by Expo CLI)
+- Align Expo-related packages to expected SDK-compatible versions listed by expo start.
+
+4) Stripe real integration
+- Replace simulated payment with actual Stripe checkout + webhook/confirmation flow.
+
+5) Firestore security rules and indexes
+- Lock writes to authenticated users and resource owners.
+- Add required indexes for event/conversation queries.
+
+6) Profile creation and editing screen : name, bio, profile Emoji / picture, interests as tags...
+
+7) Map View, opens a similar to google maps view with pins on the location of the activities and events in the city.
+
+8) Choose a song and background photo/video when creating an event.
+
+9) test event creation and joining and payments and chats ( history, notification, approval, states...)
+
+10) Chats between users.
+
+** Most important ** reduce or remove waiting time to show the events, when opening the website.
