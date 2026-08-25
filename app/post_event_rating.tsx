@@ -1,327 +1,414 @@
-// PostEventRatingScreen.tsx — React Native / Expo
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
-import {
-  ArrowLeft,
-  Star,
-  Users,
-  CheckCircle,
-} from 'lucide-react-native';
+import { ArrowLeft, Star, CheckCircle } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { dataService } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
+import { hasEventEnded } from '../lib/eventTime';
+import type { Attendee, RatingQuality } from '../lib/types';
 
-type UserRole = 'organizer' | 'attendee';
-
-type Organizer = { name: string; avatar?: string };
-type Person = { id: number; name: string; avatar?: string; role: 'organizer' | 'attendee' };
-
-type EventLite = {
-  id?: number | string;
-  title?: string;
-  organizer?: Organizer | string;
-  // In production you’ll likely pass attendees you want the organizer to rate:
-  // attendees?: Array<{ id: number; name: string; avatar?: string }>;
+type Person = {
+  uid: string;
+  name: string;
+  avatar?: string;
+  role: 'organizer' | 'attendee';
 };
 
-type QualityOption = {
-  id: string;
-  label: string;
-  emoji: string;
-  description: string;
-};
-
-type RatingsMap = Record<number, QualityOption>;
-
-type Props = {
-  event?: EventLite;
-  userRole: UserRole; // 'organizer' rates attendees, 'attendee' rates organizer
-  onBack?: () => void;
-  onComplete?: (ratings: RatingsMap) => void;
-};
-
-// ----- Quality banks (from your web file) -----
-const topOrganizerQualities: QualityOption[] = [
+const organizerQualities: RatingQuality[] = [
   { id: 'organized', label: 'Super Organized', emoji: '📋', description: 'Everything was perfectly planned' },
   { id: 'welcoming', label: 'Very Welcoming', emoji: '🤗', description: 'Made everyone feel included' },
   { id: 'energetic', label: 'High Energy', emoji: '⚡', description: 'Brought amazing energy to the event' },
+  { id: 'communicative', label: 'Great Communicator', emoji: '💬', description: 'Kept everyone in the loop' },
 ];
 
-const attendeeQualityOptions: QualityOption[] = [
+const attendeeQualities: RatingQuality[] = [
   { id: 'engaged', label: 'Highly Engaged', emoji: '🎯', description: 'Actively participated throughout' },
   { id: 'respectful', label: 'Very Respectful', emoji: '🙏', description: 'Respectful of others and guidelines' },
   { id: 'positive', label: 'Positive Energy', emoji: '😊', description: 'Brought great vibes to the group' },
-  { id: 'helpful', label: 'Super Helpful', emoji: '🤝', description: 'Helped others and contributed positively' },
-  { id: 'punctual', label: 'Always Punctual', emoji: '⏰', description: 'On time and ready to participate' },
+  { id: 'helpful', label: 'Super Helpful', emoji: '🤝', description: 'Helped others and contributed' },
+  { id: 'punctual', label: 'Always Punctual', emoji: '⏰', description: 'On time and ready to go' },
   { id: 'enthusiastic', label: 'Very Enthusiastic', emoji: '🌟', description: 'Showed genuine enthusiasm' },
 ];
 
-export default function PostEventRatingScreen({
-  event,
-  userRole,
-  onBack,
-  onComplete,
-}: Props) {
-  // In production, replace this with real data from `event.attendees` (if organizer)
-  // or simply the organizer identity (if attendee).
-  const peopleToRate: Person[] = useMemo(() => {
-    if (userRole === 'organizer') {
-      return [
-        { id: 1, name: 'John Doe', avatar: '👤', role: 'attendee' },
-        { id: 2, name: 'Jane Smith', avatar: '👩', role: 'attendee' },
-        { id: 3, name: 'Mike Johnson', avatar: '👨', role: 'attendee' },
-      ];
-    }
-    const orgName =
-      typeof event?.organizer === 'object'
-        ? event?.organizer?.name
-        : event?.organizer || 'Event Organizer';
-    const orgAvatar =
-      typeof event?.organizer === 'object'
-        ? event?.organizer?.avatar
-        : '👩‍🦰';
+const STAR_VALUES = [1, 2, 3, 4, 5];
 
-    return [
-      { id: 101, name: orgName, avatar: orgAvatar, role: 'organizer' },
-    ];
-  }, [userRole, event]);
+export default function PostEventRatingScreen() {
+  const params = useLocalSearchParams();
+  const eventId = String(params.eventId || '');
+  const { user, initializing } = useAuth();
 
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [ratings, setRatings] = useState<RatingsMap>({});
-  const [selectedQuality, setSelectedQuality] = useState<QualityOption | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [event, setEvent] = useState<any | null>(null);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selections, setSelections] = useState<
+    Record<string, { quality: RatingQuality; stars: number }>
+  >({});
   const [isComplete, setIsComplete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const currentPerson = peopleToRate[currentIdx];
-  const isLast = currentIdx === peopleToRate.length - 1;
-  const progressPct = ((currentIdx + 1) / peopleToRate.length) * 100;
+  const load = useCallback(async () => {
+    if (!eventId || !user) {
+      setLoading(false);
+      return;
+    }
 
-  const options: QualityOption[] =
-    currentPerson?.role === 'organizer' ? topOrganizerQualities : attendeeQualityOptions;
+    try {
+      const eventData: any = await dataService.getEvent(eventId);
+      if (!eventData) {
+        setError('This event could not be found.');
+        return;
+      }
+      setEvent(eventData);
 
-  const handleSubmit = () => {
-    if (!selectedQuality || !currentPerson) return;
+      if (!hasEventEnded(eventData)) {
+        setError('You can rate people once the event has finished.');
+        return;
+      }
 
-    const next = { ...ratings, [currentPerson.id]: selectedQuality };
-    setRatings(next);
+      if (await dataService.hasRatedEvent(eventId)) {
+        setError('You have already rated this event. Thanks!');
+        return;
+      }
 
-    if (isLast) {
+      const isOrganizer = eventData.createdBy === user.uid;
+
+      if (isOrganizer) {
+        // Organizers rate everyone who actually showed up.
+        const confirmed: Attendee[] = await dataService.getEventParticipants(eventId, 'confirmed');
+        const rateable = confirmed.filter((attendee) => attendee.uid !== user.uid);
+        if (rateable.length === 0) {
+          setError('Nobody attended this event, so there is nobody to rate.');
+          return;
+        }
+        setPeople(
+          rateable.map((attendee) => ({
+            uid: attendee.uid,
+            name: attendee.name,
+            avatar: attendee.avatar || '👤',
+            role: 'attendee' as const,
+          }))
+        );
+        return;
+      }
+
+      // Attendees rate the organizer, but only if they actually attended.
+      const commitment = await dataService.getUserCommitment(eventId);
+      if (commitment?.status !== 'confirmed') {
+        setError('Only confirmed attendees can rate this event.');
+        return;
+      }
+
+      const organizerUid = eventData.createdBy || eventData.organizer?.uid;
+      if (!organizerUid) {
+        setError('This event has no organizer profile to rate.');
+        return;
+      }
+
+      setPeople([
+        {
+          uid: organizerUid,
+          name: eventData.organizer?.name || 'Organizer',
+          avatar: eventData.organizer?.avatar || '👤',
+          role: 'organizer',
+        },
+      ]);
+    } catch {
+      setError('Something went wrong loading this event.');
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId, user]);
+
+  useEffect(() => {
+    if (initializing) return;
+    if (!user) {
+      setLoading(false);
+      setError('Please sign in to rate this event.');
+      return;
+    }
+    load();
+  }, [initializing, user, load]);
+
+  const currentPerson = people[currentIndex];
+  const options = currentPerson?.role === 'organizer' ? organizerQualities : attendeeQualities;
+  const currentSelection = currentPerson ? selections[currentPerson.uid] : undefined;
+  const isLast = currentIndex === people.length - 1;
+  const progressPct = people.length ? ((currentIndex + 1) / people.length) * 100 : 0;
+
+  const setQuality = (quality: RatingQuality) => {
+    if (!currentPerson) return;
+    setSelections((prev) => ({
+      ...prev,
+      [currentPerson.uid]: { quality, stars: prev[currentPerson.uid]?.stars ?? 5 },
+    }));
+  };
+
+  const setStars = (stars: number) => {
+    if (!currentPerson) return;
+    setSelections((prev) => {
+      const existing = prev[currentPerson.uid];
+      if (!existing) return prev;
+      return { ...prev, [currentPerson.uid]: { ...existing, stars } };
+    });
+  };
+
+  const submitAll = async (finalSelections: typeof selections) => {
+    const entries = people
+      .map((person) => {
+        const selection = finalSelections[person.uid];
+        if (!selection) return null;
+        return {
+          rateeUid: person.uid,
+          rateeRole: person.role,
+          qualityId: selection.quality.id,
+          qualityLabel: selection.quality.label,
+          qualityEmoji: selection.quality.emoji,
+          stars: selection.stars,
+        };
+      })
+      .filter(Boolean) as Parameters<typeof dataService.submitRatings>[1];
+
+    if (entries.length === 0) {
+      router.back();
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await dataService.submitRatings(eventId, entries);
       setIsComplete(true);
-      // Return results shortly after showing the thank-you screen
-      setTimeout(() => onComplete?.(next), 2000);
-    } else {
-      setCurrentIdx((v) => v + 1);
-      setSelectedQuality(null);
+      setTimeout(() => router.back(), 1800);
+    } catch {
+      Alert.alert('Could not save', 'Your ratings did not save. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleSkip = () => {
-    if (isLast) {
-      setIsComplete(true);
-      setTimeout(() => onComplete?.(ratings), 2000);
-    } else {
-      setCurrentIdx((v) => v + 1);
-      setSelectedQuality(null);
-    }
+  const onNext = () => {
+    if (!currentSelection) return;
+    if (isLast) return submitAll(selections);
+    setCurrentIndex((index) => index + 1);
   };
 
-  // ------- Completion screen -------
+  const onSkip = () => {
+    if (isLast) return submitAll(selections);
+    setCurrentIndex((index) => index + 1);
+  };
+
+  if (initializing || loading) {
+    return (
+      <View style={[styles.screen, styles.centered]}>
+        <ActivityIndicator size="large" color="#6366F1" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.screen, styles.centered]}>
+        <Text style={styles.emptyTitle}>Nothing to rate</Text>
+        <Text style={styles.emptyBody}>{error}</Text>
+        <Pressable onPress={() => router.back()} style={[styles.primaryBtn, { marginTop: 20 }]}>
+          <Text style={styles.primaryBtnText}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (isComplete) {
     return (
-      <View style={[styles.screen, styles.center]}>
-        <View style={styles.doneIconWrap}>
-          <CheckCircle size={40} color="#16a34a" />
-        </View>
-        <Text style={styles.h2}>Thank You!</Text>
-        <Text style={styles.mutedCenter}>
-          Your ratings have been submitted and will help improve future events.
+      <View style={[styles.screen, styles.centered]}>
+        <CheckCircle size={56} color="#16a34a" />
+        <Text style={[styles.emptyTitle, { marginTop: 16 }]}>Thanks for the feedback</Text>
+        <Text style={styles.emptyBody}>
+          Your ratings help everyone find better events and better people.
         </Text>
-        <Text style={styles.subtleCenter}>Returning to your profile…</Text>
+      </View>
+    );
+  }
+
+  if (!currentPerson) {
+    return (
+      <View style={[styles.screen, styles.centered]}>
+        <Text style={styles.emptyTitle}>Nobody to rate</Text>
+        <Pressable onPress={() => router.back()} style={[styles.primaryBtn, { marginTop: 20 }]}>
+          <Text style={styles.primaryBtnText}>Go back</Text>
+        </Pressable>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
-      {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.backBtn} android_ripple={{ color: '#e5e7eb', borderless: true }}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={8}>
           <ArrowLeft size={22} color="#111827" />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.h1}>Rate Your Experience</Text>
-          {!!event?.title && <Text style={styles.subtle}>{event.title}</Text>}
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {event?.title || 'Rate this event'}
+          </Text>
+          <Text style={styles.headerMeta}>
+            {currentIndex + 1} of {people.length}
+          </Text>
         </View>
       </View>
 
-      {/* Progress */}
-      <View style={styles.progressWrap}>
-        <View style={styles.progressTopRow}>
-          <Text style={styles.progressLabel}>Progress</Text>
-          <Text style={styles.progressLabel}>
-            {currentIdx + 1} of {peopleToRate.length}
-          </Text>
-        </View>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressBar, { width: `${progressPct}%` }]} />
-        </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
       </View>
 
-      {/* Content */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
-        {/* Person card */}
-        <View style={styles.personWrap}>
-          <View style={styles.avatar}>
-            <Text style={{ fontSize: 28 }}>{currentPerson?.avatar || '🙂'}</Text>
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+        <View style={styles.personCard}>
+          <View style={styles.personAvatar}>
+            <Text style={{ fontSize: 30 }}>{currentPerson.avatar || '👤'}</Text>
           </View>
-          <Text style={styles.h2}>{currentPerson?.name}</Text>
-          <View style={styles.roleRow}>
-            {currentPerson?.role === 'organizer' ? (
-              <>
-                <Star size={16} color="#6b7280" />
-                <Text style={styles.roleText}>Event Organizer</Text>
-              </>
-            ) : (
-              <>
-                <Users size={16} color="#6b7280" />
-                <Text style={styles.roleText}>Fellow Attendee</Text>
-              </>
-            )}
-          </View>
-        </View>
-
-        {/* Prompt */}
-        <View style={{ marginTop: 4, marginBottom: 12 }}>
-          <Text style={styles.promptTitle}>
-            {currentPerson?.role === 'organizer'
-              ? 'How would you describe this organizer?'
-              : 'How would you describe this attendee?'}
-          </Text>
-          <Text style={styles.promptSub}>
-            {currentPerson?.role === 'organizer'
-              ? 'Choose from the top 3 most common host qualities'
-              : 'Choose the quality that best fits your experience'}
+          <Text style={styles.personName}>{currentPerson.name}</Text>
+          <Text style={styles.personRole}>
+            {currentPerson.role === 'organizer' ? 'Organized this event' : 'Attended this event'}
           </Text>
         </View>
 
-        {/* Quality options */}
-        <View style={{ gap: 10 }}>
-          {options.map((opt) => {
-            const selected = selectedQuality?.id === opt.id;
+        <Text style={styles.sectionTitle}>
+          What stood out about {currentPerson.name.split(' ')[0]}?
+        </Text>
+
+        <View style={{ gap: 10, marginBottom: 24 }}>
+          {options.map((option) => {
+            const selected = currentSelection?.quality.id === option.id;
             return (
               <Pressable
-                key={opt.id}
-                onPress={() => setSelectedQuality(opt)}
-                style={[
-                  styles.optionCard,
-                  selected ? styles.optionCardSelected : styles.optionCardIdle,
-                ]}
-                android_ripple={{ color: '#e5e7eb' }}
+                key={option.id}
+                onPress={() => setQuality(option)}
+                style={[styles.qualityCard, selected && styles.qualityCardSelected]}
               >
-                <View style={styles.optionRow}>
-                  <Text style={styles.optionEmoji}>{opt.emoji}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.optionTitle}>{opt.label}</Text>
-                    <Text style={styles.optionDesc}>{opt.description}</Text>
-                  </View>
+                <Text style={styles.qualityEmoji}>{option.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.qualityLabel, selected && styles.qualityLabelSelected]}>
+                    {option.label}
+                  </Text>
+                  <Text style={styles.qualityDesc}>{option.description}</Text>
                 </View>
               </Pressable>
             );
           })}
         </View>
-      </ScrollView>
 
-      {/* Actions */}
-      <View style={styles.actions}>
-        <Pressable onPress={handleSkip} style={[styles.btn, styles.btnOutline]} android_ripple={{ color: '#e5e7eb' }}>
-          <Text style={[styles.btnText, styles.btnTextOutline]}>Skip</Text>
-        </Pressable>
+        {currentSelection && (
+          <View style={{ marginBottom: 26 }}>
+            <Text style={styles.sectionTitle}>Overall</Text>
+            <View style={styles.starRow}>
+              {STAR_VALUES.map((value) => (
+                <Pressable key={value} onPress={() => setStars(value)} hitSlop={6}>
+                  <Star
+                    size={32}
+                    color="#f59e0b"
+                    fill={value <= currentSelection.stars ? '#f59e0b' : 'none'}
+                  />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
 
         <Pressable
-          onPress={handleSubmit}
-          disabled={!selectedQuality}
-          style={[styles.btn, selectedQuality ? styles.btnPrimary : styles.btnDisabled]}
-          android_ripple={{ color: '#11182711' }}
+          onPress={onNext}
+          disabled={!currentSelection || submitting}
+          style={[styles.primaryBtn, (!currentSelection || submitting) && styles.btnDisabled]}
         >
-          <Text style={[styles.btnText, selectedQuality ? styles.btnTextPrimary : styles.btnTextDisabled]}>
-            {isLast ? 'Complete' : 'Next'}
-          </Text>
+          {submitting ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryBtnText}>
+              {isLast ? 'Submit ratings' : 'Next person'}
+            </Text>
+          )}
         </Pressable>
-      </View>
+
+        <Pressable onPress={onSkip} disabled={submitting} style={styles.skipBtn}>
+          <Text style={styles.skipText}>{isLast ? 'Finish without rating' : 'Skip this person'}</Text>
+        </Pressable>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#ffffff' },
-  center: { alignItems: 'center', justifyContent: 'center', padding: 16 },
+  screen: { flex: 1, backgroundColor: '#fff' },
+  centered: { justifyContent: 'center', alignItems: 'center', padding: 28 },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
     gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 12,
   },
-  backBtn: { padding: 8, marginRight: 4, borderRadius: 999 },
-  h1: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  h2: { fontSize: 16, fontWeight: '600', color: '#111827', textAlign: 'center', marginTop: 6 },
-  mutedCenter: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginTop: 6 },
-  subtleCenter: { fontSize: 12, color: '#9ca3af', textAlign: 'center', marginTop: 6 },
-  subtle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  iconBtn: { padding: 6, borderRadius: 999 },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  headerMeta: { fontSize: 12, color: '#6b7280', marginTop: 2 },
 
-  progressWrap: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8, backgroundColor: '#f9fafb' },
-  progressTopRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  progressLabel: { fontSize: 12, color: '#6b7280' },
-  progressTrack: { width: '100%', height: 8, borderRadius: 999, backgroundColor: '#e5e7eb', overflow: 'hidden' },
-  progressBar: { height: '100%', borderRadius: 999, backgroundColor: '#111827' },
+  progressTrack: { height: 3, backgroundColor: '#e5e7eb' },
+  progressFill: { height: 3, backgroundColor: '#4f46e5' },
 
-  personWrap: { alignItems: 'center', marginBottom: 12 },
-  avatar: {
-    width: 80, height: 80, borderRadius: 40, backgroundColor: '#f3f4f6',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  personCard: { alignItems: 'center', marginBottom: 26 },
+  personAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
-  roleRow: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  roleText: { fontSize: 13, color: '#6b7280' },
+  personName: { fontSize: 19, fontWeight: '700', color: '#111827' },
+  personRole: { fontSize: 13, color: '#6b7280', marginTop: 2 },
 
-  promptTitle: { textAlign: 'center', fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 4 },
-  promptSub: { textAlign: 'center', fontSize: 12, color: '#6b7280' },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 12 },
 
-  optionCard: {
-    borderWidth: 1, borderRadius: 12, padding: 12,
-  },
-  optionCardIdle: { borderColor: '#e5e7eb', backgroundColor: '#ffffff' },
-  optionCardSelected: { borderColor: '#2563eb', backgroundColor: '#eff6ff' },
-  optionRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  optionEmoji: { fontSize: 22 },
-  optionTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  optionDesc: { fontSize: 12, color: '#6b7280', marginTop: 2 },
-
-  actions: {
-    padding: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e5e7eb',
+  qualityCard: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#e5e7eb',
   },
-  btn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, borderRadius: 12,
-  },
-  btnOutline: { borderWidth: 1, borderColor: '#d1d5db', backgroundColor: '#ffffff' },
-  btnPrimary: { backgroundColor: '#111827' },
-  btnDisabled: { backgroundColor: '#e5e7eb' },
+  qualityCardSelected: { borderColor: '#4f46e5', backgroundColor: '#eef2ff' },
+  qualityEmoji: { fontSize: 24 },
+  qualityLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  qualityLabelSelected: { color: '#4338ca' },
+  qualityDesc: { fontSize: 12, color: '#6b7280', marginTop: 2 },
 
-  btnText: { fontSize: 15, fontWeight: '700' },
-  btnTextOutline: { color: '#111827' },
-  btnTextPrimary: { color: '#ffffff' },
-  btnTextDisabled: { color: '#6b7280' },
+  starRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
 
-  doneIconWrap: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: '#dcfce7', alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  primaryBtn: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingVertical: 15,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  btnDisabled: { opacity: 0.45 },
+
+  skipBtn: { alignItems: 'center', paddingVertical: 14 },
+  skipText: { color: '#6b7280', fontSize: 13, fontWeight: '600' },
+
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#111827', textAlign: 'center' },
+  emptyBody: { fontSize: 14, color: '#6b7280', textAlign: 'center', marginTop: 8, lineHeight: 20 },
 });

@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { ArrowLeft, Calendar, History } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { authService, dataService } from '../Backend/firebase';
+import { dataService } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
 
 type Organizer = {
   uid?: string;
@@ -43,6 +44,7 @@ const mockOrganizerQualities = {
 };
 
 export default function OrganizerInfoScreen() {
+  const { user: currentUser } = useAuth();
   const params = useLocalSearchParams();
   const organizerUid = params.organizerUid as string;
   const organizerName = params.organizerName as string;
@@ -258,7 +260,7 @@ export default function OrganizerInfoScreen() {
             ))}
           </View>
 
-          {!!organizer.uid && organizer.uid !== authService.getCurrentUser()?.uid && (
+          {!!organizer.uid && organizer.uid !== currentUser?.uid && (
             <Pressable
               style={styles.messageBtn}
               onPress={() =>

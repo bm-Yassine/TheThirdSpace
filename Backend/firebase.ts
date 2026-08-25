@@ -11,10 +11,35 @@ try {
 } catch (e) {
   getReactNativePersistence = undefined;
 }
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, type DocumentData } from 'firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  runTransaction,
+  increment,
+  type DocumentData,
+  type Unsubscribe,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mockEvents } from '../lib/events';
+import { USE_MOCK_EVENTS } from '../lib/config';
+import {
+  getEventStart,
+  hasEventEnded,
+  DEFAULT_EVENT_DURATION_MINUTES,
+} from '../lib/eventTime';
+import type { Attendee, AttendeeStatus, Rating, ReputationSummary } from '../lib/types';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -62,18 +87,24 @@ export const authService = {
 
   async signUp(email: string, password: string, displayName?: string) {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    
-    // Create user profile in Firestore
+
+    // The account already exists at this point, so a Firestore hiccup must not
+    // surface as "signup failed". AuthProvider re-attempts the profile write on
+    // every auth state change, so a missed write is self-healing.
     if (userCredential.user) {
-      await dataService.createUserProfile(userCredential.user.uid, {
-        email: userCredential.user.email || email,
-        displayName: displayName || 'User',
-        photoURL: userCredential.user.photoURL || null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      try {
+        await dataService.createUserProfile(userCredential.user.uid, {
+          email: userCredential.user.email || email,
+          displayName: displayName || 'User',
+          photoURL: userCredential.user.photoURL || null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      } catch (error) {
+        console.warn('Profile document could not be created at signup:', error);
+      }
     }
-    
+
     return userCredential;
   },
 
@@ -111,12 +142,20 @@ export interface UserProfile {
   };
 }
 
+export type CommitmentReason = 'approval' | 'waitlist' | 'direct' | 'payment' | 'promoted';
+export type PaymentStatus = 'pending' | 'completed' | 'not_required';
+
 export interface UserCommitment {
   eventId: string;
-  status: 'pending' | 'approved';
+  status: AttendeeStatus;
+  reason?: CommitmentReason;
+  paymentStatus?: PaymentStatus;
   committedAt: Date | any;
-  reason?: 'approval' | 'waitlist' | 'direct';
-  paymentStatus?: 'pending' | 'completed';
+  updatedAt?: Date | any;
+  /** Denormalised at write time so profile lists render without an extra read. */
+  eventTitle?: string;
+  eventStartsAt?: any;
+  organizerUid?: string | null;
 }
 
 export interface ConversationSummary {
@@ -146,6 +185,50 @@ const dateToMillis = (value: any) => {
   return new Date(value).getTime() || 0;
 };
 
+/**
+ * Maps historical status values onto the current vocabulary.
+ * Documents written before the participant subcollection used
+ * `'approved'` where we now use `'confirmed'`, and expressed the waitlist as
+ * `status: 'pending'` plus `reason: 'waitlist'`.
+ */
+const normalizeStatus = (value: any): AttendeeStatus => {
+  if (value === 'approved') return 'confirmed';
+  if (value === 'confirmed' || value === 'pending' || value === 'waitlisted' || value === 'declined') {
+    return value;
+  }
+  return 'pending';
+};
+
+/** Which denormalised counter each status feeds. `declined` counts toward nothing. */
+const COUNTER_FIELD: Partial<Record<AttendeeStatus, string>> = {
+  confirmed: 'attendees',
+  pending: 'pendingCount',
+  waitlisted: 'waitlistCount',
+};
+
+/**
+ * Builds the counter increments for a status transition, so every write path
+ * keeps `attendees` / `pendingCount` / `waitlistCount` consistent.
+ * Pass `null` for `from` on a first join, or `null` for `to` on a removal.
+ */
+const counterDeltaFor = (
+  from: AttendeeStatus | null,
+  to: AttendeeStatus | null
+): Record<string, any> => {
+  const delta: Record<string, number> = {};
+
+  const fromField = from ? COUNTER_FIELD[from] : undefined;
+  const toField = to ? COUNTER_FIELD[to] : undefined;
+  if (fromField === toField) return {};
+
+  if (fromField) delta[fromField] = (delta[fromField] || 0) - 1;
+  if (toField) delta[toField] = (delta[toField] || 0) + 1;
+
+  return Object.fromEntries(
+    Object.entries(delta).map(([field, amount]) => [field, increment(amount)])
+  );
+};
+
 const toOrganizerUid = (organizerName?: string | null) => {
   const normalized = (organizerName || 'organizer')
     .toLowerCase()
@@ -155,6 +238,8 @@ const toOrganizerUid = (organizerName?: string | null) => {
 };
 
 const getMockEventById = (eventId: string) => {
+  if (!USE_MOCK_EVENTS) return null;
+
   const event = mockEvents.find((e) => String(e.id) === String(eventId));
   if (!event) return null;
 
@@ -199,7 +284,7 @@ export const dataService = {
   },
 
   async ensureUserProfileFromAuthUser(user: User, displayNameOverride?: string) {
-    const existing = await this.getUserProfile(user.uid);
+    const existing = await this.getUserProfile(user.uid).catch(() => null);
     if (existing) return existing;
 
     const derivedName =
@@ -287,10 +372,28 @@ export const dataService = {
     if (!user) throw new Error('User not authenticated');
 
     const eventRef = doc(collection(db, 'events'));
+
+    const startsAt = getEventStart(eventData);
+    const durationMinutes =
+      Number(eventData.durationMinutes) || DEFAULT_EVENT_DURATION_MINUTES;
+    const endsAt = startsAt
+      ? new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
+      : null;
+
     const eventWithMeta = {
       ...eventData,
       id: eventRef.id,
       createdBy: user.uid,
+      // Stored as ISO strings so they survive the JSON round-trip through the
+      // feed cache and stay comparable across web and native.
+      startsAt: startsAt ? startsAt.toISOString() : null,
+      endsAt: endsAt ? endsAt.toISOString() : null,
+      durationMinutes,
+      status: 'active',
+      // Denormalised participation counters, kept in step by counterDeltaFor().
+      attendees: 0,
+      pendingCount: 0,
+      waitlistCount: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -413,169 +516,404 @@ export const dataService = {
     return favoriteDoc.exists();
   },
 
-  // User commitments
-  async commitToEvent(eventId: string, options?: { paymentCompleted?: boolean }) {
+  // ---------------------------------------------------------------------------
+  // Participation
+  //
+  // Source of truth is `events/{eventId}/participants/{uid}`. The event document
+  // carries denormalised counters (`attendees`, `pendingCount`, `waitlistCount`)
+  // so feeds can render capacity without reading the subcollection, and
+  // `users/{uid}/commitments/{eventId}` mirrors the row so a user can list their
+  // own participation without querying across every event.
+  //
+  // All three are written inside one transaction, which is what makes capacity
+  // safe under concurrent joins.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Joins an event, picking the correct lane: confirmed, awaiting organizer
+   * approval, awaiting payment, or waitlisted when the event is full.
+   */
+  async joinEvent(
+    eventId: string,
+    options?: { paymentCompleted?: boolean }
+  ): Promise<{ status: AttendeeStatus; reason: CommitmentReason }> {
     const user = auth.currentUser;
     if (!user) throw new Error('User not authenticated');
 
-    // Get user profile to add their info to the event
-    let userProfile = await this.getUserProfile(user.uid);
-    if (!userProfile) {
-      userProfile = await this.ensureUserProfileFromAuthUser(user);
-    }
-    if (!userProfile) throw new Error('User profile not found');
+    const profile =
+      (await this.getUserProfile(user.uid)) ||
+      (await this.ensureUserProfileFromAuthUser(user));
 
-    // Get the event first to determine approval/waitlist status
     const eventRef = doc(db, 'events', eventId);
-    const eventDoc = await getDoc(eventRef);
-    const mockEvent = !eventDoc.exists() ? getMockEventById(eventId) : null;
-    if (!eventDoc.exists() && !mockEvent) throw new Error('Event not found');
-
-    const eventData: any = eventDoc.exists() ? eventDoc.data() : mockEvent;
-    if (!eventData) throw new Error('Event not found');
-    const currentAttendees = eventData.attendees || 0;
-    const maxAttendees = eventData.maxAttendees || 0;
-    const requiresPayment = Number(eventData.cost || 0) > 0;
-    const isFull = maxAttendees > 0 && currentAttendees >= maxAttendees;
-    const requiresApproval = !!eventData.requiresApproval;
-
-    const status: UserCommitment['status'] = requiresApproval || isFull ? 'pending' : 'approved';
-    const reason: UserCommitment['reason'] = requiresApproval
-      ? 'approval'
-      : isFull
-      ? 'waitlist'
-      : 'direct';
-
+    const participantRef = doc(db, 'events', eventId, 'participants', user.uid);
     const commitmentRef = doc(db, 'users', user.uid, 'commitments', eventId);
-    const existingCommitment = await getDoc(commitmentRef);
-    const isFirstCommitment = !existingCommitment.exists();
 
-    // Add/update user's commitment
-    await setDoc(commitmentRef, {
-      eventId,
-      status,
-      reason,
-      paymentStatus: requiresPayment
-        ? options?.paymentCompleted
-          ? 'completed'
-          : 'pending'
-        : 'completed',
-      committedAt: new Date(),
-    });
+    return runTransaction(db, async (transaction) => {
+      const eventSnap = await transaction.get(eventRef);
+      if (!eventSnap.exists()) throw new Error('Event not found');
 
-    // Keep a dedicated joined-events reference for profile "joined events" list
-    await setDoc(doc(db, 'users', user.uid, 'joinedEvents', eventId), {
-      eventId,
-      status,
-      reason,
-      paymentStatus: requiresPayment
-        ? options?.paymentCompleted
-          ? 'completed'
-          : 'pending'
-        : 'completed',
-      committedAt: new Date(),
-      updatedAt: new Date(),
-    });
+      const eventData = eventSnap.data() as any;
+      if (eventData.status === 'cancelled') throw new Error('This event has been cancelled');
+      if (eventData.createdBy === user.uid) throw new Error('You already host this event');
+      if (hasEventEnded(eventData)) throw new Error('This event has already ended');
 
-    // Only auto-confirm attendees if approved immediately
-    if (status === 'approved' && eventDoc.exists()) {
-      const attendeesList = eventData.attendeesList || [];
+      const existingSnap = await transaction.get(participantRef);
+      const previousStatus: AttendeeStatus | null = existingSnap.exists()
+        ? normalizeStatus((existingSnap.data() as any).status)
+        : null;
 
-      // Check if user is already in the attendees list
-      const alreadyAttending = attendeesList.some((a: any) => a.uid === user.uid);
-
-      if (!alreadyAttending) {
-        // Add user to attendees list
-        const newAttendee = {
-          uid: user.uid,
-          name: userProfile.displayName,
-          photoURL: userProfile.photoURL,
-          joinedAt: new Date(),
-          status: 'confirmed'
+      // Re-joining after being declined is allowed; anything else is a no-op.
+      if (previousStatus && previousStatus !== 'declined') {
+        return {
+          status: previousStatus,
+          reason: ((existingSnap.data() as any).reason || 'direct') as CommitmentReason,
         };
-        
-        attendeesList.push(newAttendee);
-        
-        // Update the event
-        await updateDoc(eventRef, {
-          attendees: currentAttendees + 1,
-          attendeesList: attendeesList,
+      }
+
+      const confirmedCount = Number(eventData.attendees || 0);
+      const maxAttendees = Number(eventData.maxAttendees || 0);
+      const isFull = maxAttendees > 0 && confirmedCount >= maxAttendees;
+      const cost = Number(eventData.cost || 0);
+      const needsPayment = cost > 0 && !options?.paymentCompleted;
+      const needsApproval = !!eventData.requiresApproval;
+
+      let status: AttendeeStatus;
+      let reason: CommitmentReason;
+
+      if (needsPayment) {
+        status = 'pending';
+        reason = 'payment';
+      } else if (isFull) {
+        status = 'waitlisted';
+        reason = 'waitlist';
+      } else if (needsApproval) {
+        status = 'pending';
+        reason = 'approval';
+      } else {
+        status = 'confirmed';
+        reason = 'direct';
+      }
+
+      const paymentStatus: PaymentStatus =
+        cost <= 0 ? 'not_required' : options?.paymentCompleted ? 'completed' : 'pending';
+
+      const now = new Date();
+      const participant: Attendee & { reason: CommitmentReason; updatedAt: any } = {
+        uid: user.uid,
+        name: profile?.displayName || user.displayName || 'User',
+        photoURL: profile?.photoURL || null,
+        avatar: '👤',
+        status,
+        reason,
+        paymentStatus,
+        joinedAt: now,
+        updatedAt: now,
+      };
+
+      transaction.set(participantRef, participant);
+      transaction.set(commitmentRef, {
+        eventId,
+        status,
+        reason,
+        paymentStatus,
+        // Denormalised so the profile can sort and split past/upcoming without
+        // fetching every event document.
+        eventTitle: eventData.title || 'Untitled Event',
+        eventStartsAt: eventData.startsAt || eventData.date || null,
+        organizerUid: eventData.createdBy || null,
+        committedAt: now,
+        updatedAt: now,
+      });
+
+      transaction.update(eventRef, {
+        ...counterDeltaFor(null, status),
+        updatedAt: now,
+      });
+
+      return { status, reason };
+    });
+  },
+
+  /** Backwards-compatible alias for screens still calling the old name. */
+  async commitToEvent(eventId: string, options?: { paymentCompleted?: boolean }) {
+    return this.joinEvent(eventId, options);
+  },
+
+  /** Leaves an event (or withdraws a request), then backfills from the waitlist. */
+  async leaveEvent(eventId: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const eventRef = doc(db, 'events', eventId);
+    const participantRef = doc(db, 'events', eventId, 'participants', user.uid);
+    const commitmentRef = doc(db, 'users', user.uid, 'commitments', eventId);
+
+    const freedASpot = await runTransaction(db, async (transaction) => {
+      const participantSnap = await transaction.get(participantRef);
+      if (!participantSnap.exists()) {
+        transaction.delete(commitmentRef);
+        return false;
+      }
+
+      const previousStatus = normalizeStatus((participantSnap.data() as any).status);
+      const eventSnap = await transaction.get(eventRef);
+
+      transaction.delete(participantRef);
+      transaction.delete(commitmentRef);
+
+      if (eventSnap.exists()) {
+        transaction.update(eventRef, {
+          ...counterDeltaFor(previousStatus, null),
           updatedAt: new Date(),
         });
       }
-    }
 
-    // Best-effort stats update for joined events (only on first commitment)
-    if (isFirstCommitment) {
-      const profile = await this.getUserProfile(user.uid);
-      if (profile) {
-        await this.updateUserProfile(user.uid, {
-          stats: {
-            ...profile.stats,
-            eventsJoined: (profile.stats?.eventsJoined || 0) + 1,
-          },
-        });
-      }
-    }
+      return previousStatus === 'confirmed';
+    });
 
-    return { status, reason };
+    if (freedASpot) {
+      // Best effort: a failed promotion must not fail the user's cancellation.
+      await this.promoteFromWaitlist(eventId).catch(() => undefined);
+    }
   },
 
-  async getUserCommitments() {
+  /** Backwards-compatible alias for screens still calling the old name. */
+  async cancelCommitment(eventId: string) {
+    return this.leaveEvent(eventId);
+  },
+
+  /**
+   * Promotes the longest-waiting person into a freed spot.
+   * Called after a cancellation or a capacity increase.
+   */
+  async promoteFromWaitlist(eventId: string): Promise<string | null> {
+    const eventRef = doc(db, 'events', eventId);
+    const eventSnap = await getDoc(eventRef);
+    if (!eventSnap.exists()) return null;
+
+    const eventData = eventSnap.data() as any;
+    const maxAttendees = Number(eventData.maxAttendees || 0);
+    if (maxAttendees > 0 && Number(eventData.attendees || 0) >= maxAttendees) return null;
+
+    // Queried outside the transaction because Firestore transactions cannot run
+    // queries; the transaction below re-checks the row before promoting it.
+    const waitlistSnap = await getDocs(
+      query(
+        collection(db, 'events', eventId, 'participants'),
+        where('status', '==', 'waitlisted')
+      )
+    );
+    if (waitlistSnap.empty) return null;
+
+    const next = waitlistSnap.docs
+      .map((snapshot) => ({ uid: snapshot.id, joinedAt: (snapshot.data() as any).joinedAt }))
+      .sort((a, b) => dateToMillis(a.joinedAt) - dateToMillis(b.joinedAt))[0];
+
+    const participantRef = doc(db, 'events', eventId, 'participants', next.uid);
+    const commitmentRef = doc(db, 'users', next.uid, 'commitments', eventId);
+
+    const promoted = await runTransaction(db, async (transaction) => {
+      const [freshEvent, freshParticipant] = await Promise.all([
+        transaction.get(eventRef),
+        transaction.get(participantRef),
+      ]);
+
+      if (!freshEvent.exists() || !freshParticipant.exists()) return false;
+      if (normalizeStatus((freshParticipant.data() as any).status) !== 'waitlisted') return false;
+
+      const freshData = freshEvent.data() as any;
+      const cap = Number(freshData.maxAttendees || 0);
+      if (cap > 0 && Number(freshData.attendees || 0) >= cap) return false;
+
+      // A paid or approval-gated event promotes into `pending`, not straight in.
+      const participantData = freshParticipant.data() as any;
+      const owesPayment =
+        Number(freshData.cost || 0) > 0 && participantData.paymentStatus !== 'completed';
+      const nextStatus: AttendeeStatus =
+        owesPayment || freshData.requiresApproval ? 'pending' : 'confirmed';
+      const nextReason: CommitmentReason = owesPayment
+        ? 'payment'
+        : freshData.requiresApproval
+        ? 'approval'
+        : 'promoted';
+
+      const now = new Date();
+      transaction.update(participantRef, { status: nextStatus, reason: nextReason, updatedAt: now });
+      transaction.set(
+        commitmentRef,
+        { status: nextStatus, reason: nextReason, updatedAt: now },
+        { merge: true }
+      );
+      transaction.update(eventRef, {
+        ...counterDeltaFor('waitlisted', nextStatus),
+        updatedAt: now,
+      });
+
+      return true;
+    });
+
+    return promoted ? next.uid : null;
+  },
+
+  /** Organizer-only: accept a pending request. */
+  async approveParticipant(eventId: string, participantUid: string) {
+    return this.setParticipantStatus(eventId, participantUid, 'confirmed');
+  },
+
+  /** Organizer-only: reject a pending request. */
+  async declineParticipant(eventId: string, participantUid: string) {
+    return this.setParticipantStatus(eventId, participantUid, 'declined');
+  },
+
+  async setParticipantStatus(
+    eventId: string,
+    participantUid: string,
+    nextStatus: AttendeeStatus
+  ) {
     const user = auth.currentUser;
     if (!user) throw new Error('User not authenticated');
 
-    const commitmentsQuery = query(collection(db, 'users', user.uid, 'commitments'));
-    const querySnapshot = await getDocs(commitmentsQuery);
-    return querySnapshot.docs.map(doc => ({ eventId: doc.id, ...doc.data() }));
+    const eventRef = doc(db, 'events', eventId);
+    const participantRef = doc(db, 'events', eventId, 'participants', participantUid);
+    const commitmentRef = doc(db, 'users', participantUid, 'commitments', eventId);
+
+    await runTransaction(db, async (transaction) => {
+      const eventSnap = await transaction.get(eventRef);
+      if (!eventSnap.exists()) throw new Error('Event not found');
+
+      const eventData = eventSnap.data() as any;
+      if (eventData.createdBy !== user.uid) {
+        throw new Error('Only the organizer can manage attendees');
+      }
+
+      const participantSnap = await transaction.get(participantRef);
+      if (!participantSnap.exists()) throw new Error('Participant not found');
+
+      const previousStatus = normalizeStatus((participantSnap.data() as any).status);
+      if (previousStatus === nextStatus) return;
+
+      if (nextStatus === 'confirmed') {
+        const cap = Number(eventData.maxAttendees || 0);
+        if (cap > 0 && Number(eventData.attendees || 0) >= cap) {
+          throw new Error('Event is at capacity');
+        }
+      }
+
+      const now = new Date();
+      transaction.update(participantRef, { status: nextStatus, updatedAt: now });
+      transaction.set(commitmentRef, { status: nextStatus, updatedAt: now }, { merge: true });
+      transaction.update(eventRef, {
+        ...counterDeltaFor(previousStatus, nextStatus),
+        updatedAt: now,
+      });
+    });
+  },
+
+  /** Marks a participant's payment as settled and moves them out of the payment lane. */
+  async markParticipantPaid(eventId: string, participantUid?: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    const targetUid = participantUid || user.uid;
+
+    const eventRef = doc(db, 'events', eventId);
+    const participantRef = doc(db, 'events', eventId, 'participants', targetUid);
+    const commitmentRef = doc(db, 'users', targetUid, 'commitments', eventId);
+
+    await runTransaction(db, async (transaction) => {
+      const eventSnap = await transaction.get(eventRef);
+      if (!eventSnap.exists()) throw new Error('Event not found');
+      const eventData = eventSnap.data() as any;
+
+      const participantSnap = await transaction.get(participantRef);
+      if (!participantSnap.exists()) throw new Error('Participant not found');
+
+      const previousStatus = normalizeStatus((participantSnap.data() as any).status);
+      const cap = Number(eventData.maxAttendees || 0);
+      const isFull = cap > 0 && Number(eventData.attendees || 0) >= cap;
+
+      const nextStatus: AttendeeStatus = eventData.requiresApproval
+        ? 'pending'
+        : isFull && previousStatus !== 'confirmed'
+        ? 'waitlisted'
+        : 'confirmed';
+      const nextReason: CommitmentReason = eventData.requiresApproval
+        ? 'approval'
+        : nextStatus === 'waitlisted'
+        ? 'waitlist'
+        : 'direct';
+
+      const now = new Date();
+      transaction.update(participantRef, {
+        status: nextStatus,
+        reason: nextReason,
+        paymentStatus: 'completed',
+        updatedAt: now,
+      });
+      transaction.set(
+        commitmentRef,
+        { status: nextStatus, reason: nextReason, paymentStatus: 'completed', updatedAt: now },
+        { merge: true }
+      );
+      transaction.update(eventRef, {
+        ...counterDeltaFor(previousStatus, nextStatus),
+        updatedAt: now,
+      });
+    });
+  },
+
+  async getEventParticipants(eventId: string, status?: AttendeeStatus): Promise<Attendee[]> {
+    const base = collection(db, 'events', eventId, 'participants');
+    const snapshot = await getDocs(status ? query(base, where('status', '==', status)) : query(base));
+
+    return snapshot.docs
+      .map((snap) => {
+        const data = snap.data() as any;
+        return { ...data, uid: snap.id, status: normalizeStatus(data.status) } as Attendee;
+      })
+      .sort((a, b) => dateToMillis(a.joinedAt) - dateToMillis(b.joinedAt));
+  },
+
+  /** Live participant list, used by the organizer's attendee-management screen. */
+  subscribeToEventParticipants(
+    eventId: string,
+    onChange: (participants: Attendee[]) => void,
+    onError?: (error: Error) => void
+  ): Unsubscribe {
+    return onSnapshot(
+      collection(db, 'events', eventId, 'participants'),
+      (snapshot) => {
+        const participants = snapshot.docs
+          .map((snap) => {
+            const data = snap.data() as any;
+            return { ...data, uid: snap.id, status: normalizeStatus(data.status) } as Attendee;
+          })
+          .sort((a, b) => dateToMillis(a.joinedAt) - dateToMillis(b.joinedAt));
+        onChange(participants);
+      },
+      (error) => onError?.(error)
+    );
+  },
+
+  async getUserCommitments(): Promise<UserCommitment[]> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const snapshot = await getDocs(collection(db, 'users', user.uid, 'commitments'));
+    return snapshot.docs.map((snap) => {
+      const data = snap.data() as any;
+      return { ...data, eventId: snap.id, status: normalizeStatus(data.status) } as UserCommitment;
+    });
   },
 
   async getUserCommitment(eventId: string): Promise<UserCommitment | null> {
     const user = auth.currentUser;
     if (!user) return null;
 
-    const commitmentDoc = await getDoc(doc(db, 'users', user.uid, 'commitments', eventId));
-    if (!commitmentDoc.exists()) return null;
-    return commitmentDoc.data() as UserCommitment;
-  },
+    const snapshot = await getDoc(doc(db, 'users', user.uid, 'commitments', eventId));
+    if (!snapshot.exists()) return null;
 
-  async cancelCommitment(eventId: string) {
-    const user = auth.currentUser;
-    if (!user) throw new Error('User not authenticated');
-
-    const commitmentRef = doc(db, 'users', user.uid, 'commitments', eventId);
-    const commitmentDoc = await getDoc(commitmentRef);
-    if (!commitmentDoc.exists()) return;
-
-    const commitment = commitmentDoc.data() as UserCommitment;
-    await deleteDoc(commitmentRef);
-    await deleteDoc(doc(db, 'users', user.uid, 'joinedEvents', eventId));
-
-    // If they had a confirmed spot, remove from event attendees
-    if (commitment.status === 'approved') {
-      const eventRef = doc(db, 'events', eventId);
-      const eventDoc = await getDoc(eventRef);
-      if (eventDoc.exists()) {
-        const eventData = eventDoc.data();
-        const attendeesList = (eventData.attendeesList || []).filter((a: any) => a.uid !== user.uid);
-        await updateDoc(eventRef, {
-          attendees: Math.max((eventData.attendees || 1) - 1, 0),
-          attendeesList,
-          updatedAt: new Date(),
-        });
-      }
-    }
-
-    // Best-effort stats decrement
-    const profile = await this.getUserProfile(user.uid);
-    if (profile) {
-      await this.updateUserProfile(user.uid, {
-        stats: {
-          ...profile.stats,
-          eventsJoined: Math.max((profile.stats?.eventsJoined || 1) - 1, 0),
-        },
-      });
-    }
+    const data = snapshot.data() as any;
+    return { ...data, eventId, status: normalizeStatus(data.status) } as UserCommitment;
   },
 
   async getOrCreateConversation(otherUserId: string): Promise<string> {
@@ -703,6 +1041,213 @@ export const dataService = {
     });
 
     return messageRef.id;
+  },
+
+  // ---------------------------------------------------------------------------
+  // Realtime chat
+  // ---------------------------------------------------------------------------
+
+  /** Live message stream for an open conversation. */
+  subscribeToConversationMessages(
+    conversationId: string,
+    onChange: (messages: ChatMessage[]) => void,
+    onError?: (error: Error) => void
+  ): Unsubscribe {
+    return onSnapshot(
+      query(collection(db, 'conversations', conversationId, 'messages'), orderBy('createdAt', 'asc')),
+      (snapshot) => {
+        onChange(
+          snapshot.docs.map((snap) => ({
+            id: snap.id,
+            conversationId,
+            ...(snap.data() as Omit<ChatMessage, 'id' | 'conversationId'>),
+          }))
+        );
+      },
+      (error) => onError?.(error)
+    );
+  },
+
+  /** Live conversation list, so the inbox reorders as messages arrive. */
+  subscribeToConversations(
+    onChange: (conversations: ConversationSummary[]) => void,
+    onError?: (error: Error) => void
+  ): Unsubscribe {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    return onSnapshot(
+      query(collection(db, 'conversations'), where('participantIds', 'array-contains', user.uid)),
+      (snapshot) => {
+        const conversations: ConversationSummary[] = snapshot.docs.map((snap) => {
+          const data = snap.data() as any;
+          const participantIds: string[] = data.participantIds || [];
+          const otherUserId = participantIds.find((id) => id !== user.uid) || user.uid;
+          const otherProfile = data.participantProfiles?.[otherUserId] || {};
+
+          return {
+            id: snap.id,
+            participantIds,
+            otherUserId,
+            otherUserName: otherProfile.displayName || 'User',
+            otherUserPhotoURL: otherProfile.photoURL || null,
+            lastMessage: data.lastMessage || '',
+            lastMessageSenderId: data.lastMessageSenderId || '',
+            updatedAt: data.updatedAt,
+          };
+        });
+
+        onChange(conversations.sort((a, b) => dateToMillis(b.updatedAt) - dateToMillis(a.updatedAt)));
+      },
+      (error) => onError?.(error)
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // Ratings
+  //
+  // Stored top-level in `ratings` with a deterministic id
+  // (`${eventId}_${raterUid}_${rateeUid}`) so a rating can only be cast once per
+  // person per event — a re-submit overwrites rather than double-counting.
+  // Aggregates are recomputed from the rater's perspective and denormalised onto
+  // the ratee's user document as `reputation`.
+  // ---------------------------------------------------------------------------
+
+  buildRatingId(eventId: string, raterUid: string, rateeUid: string) {
+    return `${eventId}_${raterUid}_${rateeUid}`;
+  },
+
+  /** Writes one batch of ratings and refreshes each ratee's reputation summary. */
+  async submitRatings(
+    eventId: string,
+    entries: {
+      rateeUid: string;
+      rateeRole: 'organizer' | 'attendee';
+      qualityId: string;
+      qualityLabel: string;
+      qualityEmoji: string;
+      stars?: number;
+      comment?: string;
+    }[]
+  ) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    if (entries.length === 0) return;
+
+    const eventSnap = await getDoc(doc(db, 'events', eventId));
+    const eventTitle = eventSnap.exists() ? (eventSnap.data() as any).title : undefined;
+
+    await Promise.all(
+      entries.map((entry) => {
+        const id = this.buildRatingId(eventId, user.uid, entry.rateeUid);
+        const rating: Rating = {
+          id,
+          eventId,
+          eventTitle,
+          raterUid: user.uid,
+          rateeUid: entry.rateeUid,
+          rateeRole: entry.rateeRole,
+          qualityId: entry.qualityId,
+          qualityLabel: entry.qualityLabel,
+          qualityEmoji: entry.qualityEmoji,
+          stars: entry.stars,
+          comment: entry.comment?.trim() || '',
+          createdAt: new Date(),
+        };
+        return setDoc(doc(db, 'ratings', id), rating);
+      })
+    );
+
+    // Mark the event rated for this user so the prompt stops reappearing.
+    await setDoc(
+      doc(db, 'users', user.uid, 'ratedEvents', eventId),
+      { eventId, ratedAt: new Date() },
+      { merge: true }
+    );
+
+  },
+
+  /**
+   * Derives a user's reputation from the ratings they have received.
+   *
+   * Computed on read rather than denormalised onto the user document on write.
+   * Denormalising would require the *rater* to write to the *ratee's* user doc,
+   * which can only be permitted by a security rule loose enough to let anyone
+   * forge someone else's reputation. Aggregating here keeps `users/{uid}`
+   * writable by its owner alone, and the query is a single indexed lookup.
+   */
+  async getReputation(uid: string): Promise<ReputationSummary> {
+    const snapshot = await getDocs(query(collection(db, 'ratings'), where('rateeUid', '==', uid)));
+
+    const qualityCounts: Record<string, number> = {};
+    let starTotal = 0;
+    let starCount = 0;
+
+    snapshot.docs.forEach((snap) => {
+      const data = snap.data() as Rating;
+      const key = data.qualityLabel || data.qualityId || 'unknown';
+      qualityCounts[key] = (qualityCounts[key] || 0) + 1;
+      if (typeof data.stars === 'number' && data.stars > 0) {
+        starTotal += data.stars;
+        starCount += 1;
+      }
+    });
+
+    return {
+      ratingCount: snapshot.size,
+      averageStars: starCount > 0 ? Number((starTotal / starCount).toFixed(2)) : 0,
+      qualityCounts,
+    };
+  },
+
+  async getUserRatings(uid: string): Promise<Rating[]> {
+    const snapshot = await getDocs(query(collection(db, 'ratings'), where('rateeUid', '==', uid)));
+    return snapshot.docs
+      .map((snap) => snap.data() as Rating)
+      .sort((a, b) => dateToMillis(b.createdAt) - dateToMillis(a.createdAt));
+  },
+
+  async hasRatedEvent(eventId: string): Promise<boolean> {
+    const user = auth.currentUser;
+    if (!user) return false;
+    const snapshot = await getDoc(doc(db, 'users', user.uid, 'ratedEvents', eventId));
+    return snapshot.exists();
+  },
+
+  /**
+   * Events that have finished, that the user actually took part in (as confirmed
+   * attendee or as organizer), and that they have not rated yet.
+   */
+  async getEventsAwaitingRating(): Promise<
+    { event: any; role: 'organizer' | 'attendee' }[]
+  > {
+    const user = auth.currentUser;
+    if (!user) return [];
+
+    const [commitments, createdEvents, ratedSnapshot] = await Promise.all([
+      this.getUserCommitments(),
+      this.getCurrentUserCreatedEvents(100),
+      getDocs(collection(db, 'users', user.uid, 'ratedEvents')),
+    ]);
+
+    const ratedIds = new Set(ratedSnapshot.docs.map((snap) => snap.id));
+
+    const attendedIds = commitments
+      .filter((commitment) => commitment.status === 'confirmed')
+      .map((commitment) => String(commitment.eventId))
+      .filter((id) => !ratedIds.has(id));
+
+    const attended = (await Promise.all(attendedIds.map((id) => this.getEvent(id))))
+      .filter(Boolean)
+      .filter((event) => hasEventEnded(event))
+      .map((event) => ({ event, role: 'attendee' as const }));
+
+    const hosted = (createdEvents as any[])
+      .filter((event) => event && !ratedIds.has(String(event.id)))
+      .filter((event) => hasEventEnded(event))
+      .map((event) => ({ event, role: 'organizer' as const }));
+
+    return [...hosted, ...attended];
   },
 
   async recordPayment(eventId: string, amount: number, method: 'stripe' | 'card' | 'paypal', status: 'pending' | 'completed' = 'completed') {

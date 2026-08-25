@@ -1,56 +1,94 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   TouchableOpacity,
+  Pressable,
 } from 'react-native';
+import { router } from 'expo-router';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { formatEventDate, formatEventTime } from '../../lib/eventTime';
+import TileMap, { type MapMarker } from '../TileMap';
+import type { Event } from '../../lib/types';
 
 interface MapViewProps {
   viewMode: 'discover' | 'cards' | 'map';
   setViewMode: (mode: 'discover' | 'cards' | 'map') => void;
 }
 
+/** Falls back to New York when no event carries coordinates. */
+const DEFAULT_CENTER = { latitude: 40.7128, longitude: -74.006 };
+
 export default function MapView({ viewMode, setViewMode }: MapViewProps) {
-  const cachedCount = getCachedEventFeed()?.length ?? 0;
-  const [eventsCount, setEventsCount] = useState(cachedCount);
-  const [loading, setLoading] = useState(cachedCount === 0);
+  const cached = getCachedEventFeed() ?? [];
+  const [events, setEvents] = useState<Event[]>(cached);
+  const [loading, setLoading] = useState(cached.length === 0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    const cachedEvents = getCachedEventFeed();
-    if (cachedEvents?.length) {
-      setEventsCount(cachedEvents.length);
-      setLoading(false);
-    }
-
     let isMounted = true;
 
-    const fetchEventsCount = async () => {
-      try {
-        const events = await preloadEventFeed({ limit: 50, maxItems: 50 });
-        if (isMounted) {
-          setEventsCount(events.length);
-        }
-      } catch (error) {
-        console.error('Error fetching events:', error);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchEventsCount();
+    preloadEventFeed({ limit: 50, maxItems: 50 })
+      .then((next) => {
+        if (isMounted) setEvents(next);
+      })
+      .catch((error) => console.error('Error fetching events:', error))
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
 
     return () => {
       isMounted = false;
     };
   }, []);
+
+  // Only events with real coordinates can be placed on a map.
+  const locatedEvents = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          typeof event.latitude === 'number' &&
+          typeof event.longitude === 'number' &&
+          Number.isFinite(event.latitude) &&
+          Number.isFinite(event.longitude)
+      ),
+    [events]
+  );
+
+  const markers = useMemo<MapMarker[]>(
+    () =>
+      locatedEvents.map((event) => ({
+        id: String(event.id),
+        latitude: event.latitude as number,
+        longitude: event.longitude as number,
+        label: event.title,
+        selected: String(event.id) === selectedId,
+      })),
+    [locatedEvents, selectedId]
+  );
+
+  // Centre on the average of all pins so the first paint frames the whole set.
+  const center = useMemo(() => {
+    if (locatedEvents.length === 0) return DEFAULT_CENTER;
+    const total = locatedEvents.reduce(
+      (acc, event) => ({
+        latitude: acc.latitude + (event.latitude as number),
+        longitude: acc.longitude + (event.longitude as number),
+      }),
+      { latitude: 0, longitude: 0 }
+    );
+    return {
+      latitude: total.latitude / locatedEvents.length,
+      longitude: total.longitude / locatedEvents.length,
+    };
+  }, [locatedEvents]);
+
+  const selectedEvent = useMemo(
+    () => locatedEvents.find((event) => String(event.id) === selectedId) || null,
+    [locatedEvents, selectedId]
+  );
 
   if (loading) {
     return (
@@ -121,21 +159,88 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
         </View>
       </View>
 
-      <View style={styles.mapPlaceholder}>
-        <Text style={styles.mapPlaceholderText}>🗺️</Text>
-        <Text style={styles.mapText}>Map View</Text>
-        <Text style={styles.mapSubtext}>
-          {`${eventsCount} events near you`}
-        </Text>
-        <Text style={styles.infoText}>
-          Map integration coming soon
-        </Text>
-      </View>
+      <TileMap
+        markers={markers}
+        initialCenter={center}
+        initialZoom={11}
+        onMarkerPress={(marker) => setSelectedId(marker.id)}
+      />
+
+      {locatedEvents.length === 0 && (
+        <View style={styles.emptyOverlay} pointerEvents="none">
+          <Text style={styles.emptyEmoji}>🗺️</Text>
+          <Text style={styles.emptyTitle}>No events to map yet</Text>
+          <Text style={styles.emptyBody}>
+            Events show up here once they have a location with coordinates.
+          </Text>
+        </View>
+      )}
+
+      {selectedEvent && (
+        <Pressable
+          style={styles.selectedCard}
+          onPress={() =>
+            router.push({
+              pathname: '/activity_detail',
+              params: { eventId: String(selectedEvent.id) },
+            })
+          }
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.selectedTitle} numberOfLines={1}>
+              {selectedEvent.title}
+            </Text>
+            <Text style={styles.selectedMeta} numberOfLines={1}>
+              {formatEventDate(selectedEvent)} • {formatEventTime(selectedEvent)}
+            </Text>
+            <Text style={styles.selectedMeta} numberOfLines={1}>
+              {selectedEvent.location}
+            </Text>
+          </View>
+          <Text style={styles.selectedCta}>View</Text>
+        </Pressable>
+      )}
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  emptyOverlay: {
+    position: 'absolute',
+    top: '38%',
+    left: 24,
+    right: 24,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 16,
+    padding: 20,
+  },
+  emptyEmoji: { fontSize: 34, marginBottom: 6 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  emptyBody: { fontSize: 13, color: '#6b7280', textAlign: 'center', marginTop: 4 },
+
+  selectedCard: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 104,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  selectedTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  selectedMeta: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  selectedCta: { fontSize: 13, fontWeight: '700', color: '#4f46e5' },
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -149,7 +254,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    height: SCREEN_HEIGHT,
   },
   mapPlaceholder: {
     flex: 1,

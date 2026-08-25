@@ -14,7 +14,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
-import { dataService, authService } from '../../Backend/firebase';
+import { dataService } from '../../Backend/firebase';
+import { useAuth } from '../../lib/auth';
+import { formatEventDate, formatEventTime } from '../../lib/eventTime';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
@@ -50,7 +52,8 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const [loading, setLoading] = useState(initialEvents.length === 0);
   const [isAutoScrolling, setIsAutoScrolling] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user } = useAuth();
+  const isLoggedIn = !!user;
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [showConfetti, setShowConfetti] = useState(false);
@@ -81,49 +84,42 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const audioControlColor = '#FFFFFF';
   const audioControlBorderColor = 'rgba(255, 255, 255, 0.42)';
 
-  // Check authentication status
+  // Favorites and commitments follow the auth provider, which only reports a
+  // signed-out user once the persisted session has actually been checked.
   useEffect(() => {
-    const loadUserInteractionState = async () => {
+    if (!user) {
+      setFavoriteIds(new Set());
+      setJoinedIds(new Set());
+      return;
+    }
+
+    let active = true;
+    (async () => {
       try {
         const [favorites, commitments] = await Promise.all([
           dataService.getUserFavorites(),
           dataService.getUserCommitments(),
         ]);
-
+        if (!active) return;
         setFavoriteIds(new Set(favorites.map((id) => id.toString())));
-        setJoinedIds(new Set(commitments.map((commitment: any) => commitment.eventId.toString())));
+        setJoinedIds(
+          new Set(
+            commitments
+              .filter((commitment) => commitment.status !== 'declined')
+              .map((commitment) => String(commitment.eventId))
+          )
+        );
       } catch {
+        if (!active) return;
         setFavoriteIds(new Set());
         setJoinedIds(new Set());
       }
+    })();
+
+    return () => {
+      active = false;
     };
-
-    const checkAuth = () => {
-      const user = authService.getCurrentUser();
-      setIsLoggedIn(!!user);
-      if (user) {
-        loadUserInteractionState();
-      } else {
-        setFavoriteIds(new Set());
-        setJoinedIds(new Set());
-      }
-    };
-
-    checkAuth();
-    
-    // Listen for auth state changes
-    const unsubscribe = authService.onAuthStateChange((user) => {
-      setIsLoggedIn(!!user);
-      if (user) {
-        loadUserInteractionState();
-      } else {
-        setFavoriteIds(new Set());
-        setJoinedIds(new Set());
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   // Fetch events on mount, while using cached feed for fast first paint
   useEffect(() => {
@@ -488,7 +484,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                   <View style={styles.detailRow}>
                     <Text style={styles.detailIcon}>🕐</Text>
                     <Text style={styles.detailText}>
-                      {event.date} • {event.time}
+                      {formatEventDate(event)} • {formatEventTime(event)}
                     </Text>
                   </View>
 

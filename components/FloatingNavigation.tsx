@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -8,7 +8,7 @@ import {
   Easing,
 } from 'react-native';
 import { router } from 'expo-router';
-import { authService } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
 import { Svg, Path, Circle, Rect, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,24 +21,9 @@ interface FloatingNavigationProps {
 
 export default function FloatingNavigation({ activeScreen, tone = 'dark' }: FloatingNavigationProps) {
   const insets = useSafeAreaInsets();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user } = useAuth();
+  const isLoggedIn = !!user;
   const floatAnimation = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const checkAuth = () => {
-      const user = authService.getCurrentUser();
-      setIsLoggedIn(!!user);
-    };
-
-    checkAuth();
-    
-    // Listen for auth state changes
-    const unsubscribe = authService.onAuthStateChange((user) => {
-      setIsLoggedIn(!!user);
-    });
-
-    return () => unsubscribe();
-  }, []);
 
   // Floating animation - slow up and down movement
   useEffect(() => {

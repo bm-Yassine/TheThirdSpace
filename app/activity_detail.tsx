@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,95 +16,113 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
+  MessageCircle,
+  Settings,
+  Star,
+  Clock,
 } from 'lucide-react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { authService, dataService, type UserCommitment } from '../Backend/firebase';
-
-type Organizer = { uid?: string; name: string; avatar?: string };
-
-type Activity = {
-  id: string;
-  title: string;
-  description?: string;
-  date: string;
-  time: string;
-  location: string;
-  attendees: number;
-  maxAttendees: number;
-  cost: number;
-  requiresApproval?: boolean;
-  organizer: Organizer;
-  tags?: string[];
-};
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { dataService, type UserCommitment } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
+import {
+  formatEventDate,
+  formatEventTime,
+  formatRelativeToNow,
+  hasEventEnded,
+} from '../lib/eventTime';
+import { invalidateEventFeedCache } from '../lib/eventFeed';
+import { confirmCheckout } from '../lib/payments';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
   const eventId = String(params.eventId || '');
+  const paymentParam = String(params.payment || '');
+  const sessionIdParam = String(params.session_id || '');
+  const { user, initializing } = useAuth();
 
   const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [activity, setActivity] = useState<Activity | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [event, setEvent] = useState<any | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [commitment, setCommitment] = useState<UserCommitment | null>(null);
+  const [hasRated, setHasRated] = useState(false);
+  const [settlingPayment, setSettlingPayment] = useState(false);
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!eventId) {
-        setActivity(null);
-        setLoading(false);
-        return;
+  const isLoggedIn = !!user;
+
+  const load = useCallback(async () => {
+    if (!eventId) {
+      setEvent(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const eventData: any = await dataService.getEvent(eventId);
+      setEvent(eventData || null);
+
+      if (eventData && user) {
+        const [favorite, commitmentData, rated] = await Promise.all([
+          dataService.isFavorite(eventId),
+          dataService.getUserCommitment(eventId),
+          dataService.hasRatedEvent(eventId),
+        ]);
+        setIsFavorite(favorite);
+        setCommitment(commitmentData);
+        setHasRated(rated);
+      } else {
+        setIsFavorite(false);
+        setCommitment(null);
+        setHasRated(false);
       }
+    } catch {
+      setEvent(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId, user]);
 
-      try {
-        const eventData: any = await dataService.getEvent(eventId);
-        if (!eventData) {
-          setActivity(null);
-          return;
-        }
-
-        setActivity({
-          id: String(eventData.id || eventId),
-          title: eventData.title || 'Untitled Event',
-          description: eventData.description || '',
-          date: eventData.date || '',
-          time: eventData.time || '',
-          location: eventData.location || '',
-          attendees: Number(eventData.attendees || 0),
-          maxAttendees: Number(eventData.maxAttendees || 0),
-          cost: Number(eventData.cost || 0),
-          requiresApproval: !!eventData.requiresApproval,
-          organizer: {
-            uid: eventData.organizer?.uid || eventData.createdBy,
-            name: eventData.organizer?.name || 'Unknown Organizer',
-            avatar: eventData.organizer?.avatar || '👤',
-          },
-          tags: eventData.tags || [],
-        });
-
-        const user = authService.getCurrentUser();
-        setIsLoggedIn(!!user);
-        if (user) {
-          const [favorite, commitmentData] = await Promise.all([
-            dataService.isFavorite(eventId),
-            dataService.getUserCommitment(eventId),
-          ]);
-          setIsFavorite(favorite);
-          setCommitment(commitmentData);
-        }
-      } catch {
-        setActivity(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
-  }, [eventId]);
-
-  const organizer = useMemo<Organizer>(
-    () => activity?.organizer || { name: 'Unknown Organizer', avatar: '👤' },
-    [activity]
+  // Reloads on every focus so returning from payment or the manage screen
+  // reflects the new state instead of showing a stale banner.
+  useFocusEffect(
+    useCallback(() => {
+      if (initializing) return;
+      load();
+    }, [initializing, load])
   );
+
+  // Stripe redirects back here after checkout. The webhook is authoritative,
+  // but confirming directly removes the visible lag before the banner updates.
+  useEffect(() => {
+    if (initializing || !user) return;
+    if (paymentParam !== 'success' || !sessionIdParam) return;
+
+    let active = true;
+    setSettlingPayment(true);
+    confirmCheckout(sessionIdParam)
+      .then(async (result) => {
+        if (!active) return;
+        if (result.paid) {
+          invalidateEventFeedCache();
+          await load();
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setSettlingPayment(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [initializing, user, paymentParam, sessionIdParam, load]);
+
+  const isOrganizer = !!user && !!event && event.createdBy === user.uid;
+  const ended = !!event && hasEventEnded(event);
+  const spotsLeft = useMemo(() => {
+    if (!event?.maxAttendees) return null;
+    return Math.max(Number(event.maxAttendees) - Number(event.attendees || 0), 0);
+  }, [event]);
 
   const formatCurrency = (amount: number) => {
     try {
@@ -115,159 +133,181 @@ export default function ActivityDetailScreen() {
   };
 
   const requireLogin = () => {
-    Alert.alert('Login Required', 'Please sign in to interact with events.', [
+    Alert.alert('Sign in required', 'Please sign in to interact with events.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign In', onPress: () => router.push('/login') },
     ]);
   };
 
   const toggleFavorite = async () => {
-    if (!isLoggedIn || !activity) return requireLogin();
+    if (!isLoggedIn || !event) return requireLogin();
+
+    // Optimistic: the heart should never lag behind the tap.
+    const next = !isFavorite;
+    setIsFavorite(next);
     try {
-      if (isFavorite) {
-        await dataService.removeFromFavorites(activity.id);
-        setIsFavorite(false);
-      } else {
-        await dataService.addToFavorites(activity.id);
-        setIsFavorite(true);
-      }
+      if (next) await dataService.addToFavorites(String(event.id));
+      else await dataService.removeFromFavorites(String(event.id));
     } catch {
-      Alert.alert('Error', 'Could not update favorite right now.');
+      setIsFavorite(!next);
+      Alert.alert('Error', 'Could not update your favorites right now.');
     }
   };
 
-  const onCommitPress = async () => {
-    if (!isLoggedIn || !activity) return requireLogin();
+  const goToPayment = () => {
+    router.push({
+      pathname: '/payment',
+      params: { eventId: String(event.id), amount: String(event.cost), title: event.title },
+    });
+  };
+
+  const onPrimaryPress = async () => {
+    if (!isLoggedIn || !event) return requireLogin();
+
+    // Outstanding payment always takes priority over any other action.
+    if (commitment && commitment.paymentStatus === 'pending' && Number(event.cost) > 0) {
+      return goToPayment();
+    }
 
     if (commitment) {
-      if (commitment.paymentStatus === 'pending' && activity.cost > 0) {
-        router.push({
-          pathname: './payment',
-          params: { eventId: activity.id, amount: String(activity.cost), title: activity.title },
-        });
-        return;
-      }
-
-      try {
-        await dataService.cancelCommitment(activity.id);
-        setCommitment(null);
-      } catch {
-        Alert.alert('Error', 'Could not cancel right now.');
-      }
+      const label = commitment.status === 'confirmed' ? 'Leave this event?' : 'Withdraw your request?';
+      Alert.alert(label, 'You can join again later if there is still room.', [
+        { text: 'Keep my spot', style: 'cancel' },
+        {
+          text: 'Confirm',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await dataService.leaveEvent(String(event.id));
+              setCommitment(null);
+              invalidateEventFeedCache();
+              await load();
+            } catch {
+              Alert.alert('Error', 'Could not cancel right now.');
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ]);
       return;
     }
 
-    if (activity.cost > 0) {
-      router.push({
-        pathname: './payment',
-        params: { eventId: activity.id, amount: String(activity.cost), title: activity.title },
-      });
-      return;
-    }
+    if (Number(event.cost) > 0) return goToPayment();
 
+    setBusy(true);
     try {
-      const result = await dataService.commitToEvent(activity.id);
+      const result = await dataService.joinEvent(String(event.id));
       setCommitment({
-        eventId: activity.id,
+        eventId: String(event.id),
         status: result.status,
         reason: result.reason,
         committedAt: new Date(),
       });
-    } catch {
-      Alert.alert('Error', 'Could not join this event right now.');
+      invalidateEventFeedCache();
+      await load();
+    } catch (error: any) {
+      Alert.alert('Could not join', error?.message || 'Please try again in a moment.');
+    } finally {
+      setBusy(false);
     }
   };
 
-  const onOrganizerPress = () => {
-    if (!activity) return;
-    router.push({
-      pathname: './organizer_info',
-      params: {
-        organizerName: activity.organizer.name,
-        organizerUid: activity.organizer.uid || '',
-      },
-    });
+  const onMessageOrganizer = () => {
+    if (!isLoggedIn) return requireLogin();
+    const organizerUid = event?.createdBy || event?.organizer?.uid;
+    if (!organizerUid) {
+      return Alert.alert('Unavailable', 'This organizer cannot be messaged yet.');
+    }
+    router.push({ pathname: '/chats', params: { otherUserId: organizerUid } });
   };
 
-  if (loading) {
+  if (initializing || loading || settlingPayment) {
     return (
-      <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#111827" />
+      <View style={[styles.screen, styles.centered]}>
+        <ActivityIndicator size="large" color="#6366F1" />
       </View>
     );
   }
 
-  if (!activity) {
+  if (!event) {
     return (
-      <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.screen, styles.centered]}>
         <Text style={styles.title}>Event not found</Text>
+        <Pressable onPress={() => router.replace('/home')} style={[styles.btn, styles.btnBlack, { marginTop: 16 }]}>
+          <Text style={styles.btnText}>Back to Discover</Text>
+        </Pressable>
       </View>
     );
   }
 
-  const banner =
-    commitment?.paymentStatus === 'pending'
-      ? {
-          Icon: AlertCircle,
-          title: 'Payment Required',
-          desc: 'Complete payment to confirm your participation.',
-          style: styles.bannerOrange,
-        }
-      : commitment?.status === 'approved'
-      ? {
-          Icon: CheckCircle,
-          title: "You're Going!",
-          desc: 'Your spot is confirmed. See you there!',
-          style: styles.bannerGreen,
-        }
-      : commitment?.status === 'pending'
-      ? {
-          Icon: AlertCircle,
-          title: commitment.reason === 'waitlist' ? 'On Waitlist' : 'Pending Approval',
-          desc:
-            commitment.reason === 'waitlist'
-              ? "You're on the waitlist. We'll notify you if a spot opens up."
-              : 'The organizer will review your request and get back to you soon.',
-          style: commitment.reason === 'waitlist' ? styles.bannerOrange : styles.bannerBlue,
-        }
-      : null;
+  const banner = buildBanner({ commitment, ended, isOrganizer, event });
 
-  const buttonText = !isLoggedIn
-    ? 'Sign In to Join'
-    : commitment
-    ? commitment.paymentStatus === 'pending' && activity.cost > 0
-      ? `Complete Payment - ${formatCurrency(activity.cost)}`
-      : commitment.status === 'approved'
-      ? 'Cancel Registration'
-      : 'Cancel Request'
-    : activity.cost > 0
-    ? `Join Activity - ${formatCurrency(activity.cost)}`
-    : activity.requiresApproval
-    ? 'Request to Join'
-    : activity.maxAttendees > 0 && activity.attendees >= activity.maxAttendees
-    ? 'Join Waitlist'
-    : 'Join Activity';
+  const primaryLabel = (() => {
+    if (!isLoggedIn) return 'Sign In to Join';
+    if (isOrganizer) return 'Manage Attendees';
+    if (ended) return 'This event has ended';
+    if (commitment?.paymentStatus === 'pending' && Number(event.cost) > 0) {
+      return `Complete Payment · ${formatCurrency(Number(event.cost))}`;
+    }
+    if (commitment) {
+      if (commitment.status === 'confirmed') return 'Leave Event';
+      if (commitment.status === 'waitlisted') return 'Leave Waitlist';
+      return 'Withdraw Request';
+    }
+    if (Number(event.cost) > 0) return `Join · ${formatCurrency(Number(event.cost))}`;
+    if (spotsLeft === 0) return 'Join Waitlist';
+    if (event.requiresApproval) return 'Request to Join';
+    return 'Join Event';
+  })();
 
-  const descriptionText =
-    activity.description?.trim() ||
-    `Join us for an amazing ${activity.title.toLowerCase()}! All skill levels welcome.`;
+  const primaryAction = isOrganizer
+    ? () => router.push({ pathname: '/manage_event', params: { eventId: String(event.id) } })
+    : onPrimaryPress;
 
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={8}>
           <ArrowLeft size={22} color="#111827" />
         </Pressable>
-        <Pressable
-          onPress={toggleFavorite}
-          style={[styles.iconBtn, isFavorite ? styles.heartActive : styles.heartIdle]}
-        >
-          <Heart size={20} color={isFavorite ? '#dc2626' : '#9ca3af'} fill={isFavorite ? '#dc2626' : 'none'} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {isOrganizer && (
+            <Pressable
+              onPress={() => router.push({ pathname: '/manage_event', params: { eventId: String(event.id) } })}
+              style={[styles.iconBtn, styles.iconBtnNeutral]}
+              hitSlop={8}
+            >
+              <Settings size={20} color="#374151" />
+            </Pressable>
+          )}
+          <Pressable
+            onPress={toggleFavorite}
+            style={[styles.iconBtn, isFavorite ? styles.heartActive : styles.heartIdle]}
+            hitSlop={8}
+          >
+            <Heart
+              size={20}
+              color={isFavorite ? '#dc2626' : '#9ca3af'}
+              fill={isFavorite ? '#dc2626' : 'none'}
+            />
+          </Pressable>
+        </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
-        <Text style={styles.title}>{activity.title}</Text>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+        <Text style={styles.title}>{event.title || 'Untitled Event'}</Text>
+
+        {paymentParam === 'cancelled' && !commitment?.paymentStatus && (
+          <View style={[styles.bannerBase, styles.bannerOrange]}>
+            <AlertCircle size={20} color="#111827" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerTitle}>Checkout cancelled</Text>
+              <Text style={styles.bannerDesc}>No payment was taken. You can try again below.</Text>
+            </View>
+          </View>
+        )}
 
         {banner && (
           <View style={[styles.bannerBase, banner.style]}>
@@ -279,106 +319,302 @@ export default function ActivityDetailScreen() {
           </View>
         )}
 
-        <Pressable onPress={onOrganizerPress} style={styles.orgRow}>
+        {ended && !hasRated && (commitment?.status === 'confirmed' || isOrganizer) && (
+          <Pressable
+            style={[styles.btn, styles.btnIndigo, { marginBottom: 14 }]}
+            onPress={() =>
+              router.push({ pathname: '/post_event_rating', params: { eventId: String(event.id) } })
+            }
+          >
+            <Star size={16} color="#fff" />
+            <Text style={styles.btnText}>
+              {isOrganizer ? 'Rate your attendees' : 'Rate the organizer'}
+            </Text>
+          </Pressable>
+        )}
+
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: '/organizer_info',
+              params: {
+                organizerName: event.organizer?.name || '',
+                organizerUid: event.createdBy || event.organizer?.uid || '',
+              },
+            })
+          }
+          style={styles.orgRow}
+        >
           <View style={styles.orgAvatar}>
-            <Text style={{ fontSize: 20 }}>{organizer.avatar || '👤'}</Text>
+            <Text style={{ fontSize: 20 }}>{event.organizer?.avatar || '👤'}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.orgName}>{organizer.name}</Text>
-            <Text style={styles.subtle}>Event Organizer</Text>
+            <Text style={styles.orgName}>{event.organizer?.name || 'Unknown Organizer'}</Text>
+            <Text style={styles.subtle}>{isOrganizer ? 'You are hosting' : 'Event Organizer'}</Text>
           </View>
+          {!isOrganizer && (
+            <Pressable onPress={onMessageOrganizer} style={styles.msgBtn} hitSlop={6}>
+              <MessageCircle size={18} color="#374151" />
+            </Pressable>
+          )}
         </Pressable>
 
-        <View style={{ marginBottom: 14 }}>
+        <View style={{ marginBottom: 16 }}>
           <Text style={styles.h4}>Description</Text>
-          <Text style={styles.body}>{descriptionText}</Text>
+          <Text style={styles.body}>
+            {event.description?.trim() || 'The organizer has not added a description yet.'}
+          </Text>
         </View>
 
-        <View style={{ gap: 12, marginBottom: 16 }}>
+        <View style={{ gap: 12, marginBottom: 18 }}>
           <View style={styles.detailRow}>
             <Calendar size={18} color="#6b7280" />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.detailTitle}>Date & Time</Text>
-              <Text style={styles.subtle}>{activity.date} • {activity.time}</Text>
+              <Text style={styles.subtle}>
+                {formatEventDate(event)} • {formatEventTime(event)}
+              </Text>
             </View>
+            {!!formatRelativeToNow(event) && (
+              <View style={styles.pill}>
+                <Clock size={12} color="#4b5563" />
+                <Text style={styles.pillText}>{formatRelativeToNow(event)}</Text>
+              </View>
+            )}
           </View>
+
           <View style={styles.detailRow}>
             <MapPin size={18} color="#6b7280" />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.detailTitle}>Location</Text>
-              <Text style={styles.subtle}>{activity.location}</Text>
+              <Text style={styles.subtle}>{event.location || 'Location to be announced'}</Text>
             </View>
           </View>
+
           <View style={styles.detailRow}>
             <Users size={18} color="#6b7280" />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.detailTitle}>Attendees</Text>
-              <Text style={styles.subtle}>{activity.attendees} of {activity.maxAttendees} people</Text>
+              <Text style={styles.subtle}>
+                {Number(event.attendees || 0)}
+                {event.maxAttendees ? ` of ${event.maxAttendees}` : ''} going
+                {spotsLeft !== null && spotsLeft > 0 ? ` · ${spotsLeft} spot${spotsLeft === 1 ? '' : 's'} left` : ''}
+                {spotsLeft === 0 ? ' · full' : ''}
+              </Text>
+              {isOrganizer && Number(event.pendingCount || 0) > 0 && (
+                <Text style={styles.pendingHint}>
+                  {event.pendingCount} request{Number(event.pendingCount) === 1 ? '' : 's'} awaiting your approval
+                </Text>
+              )}
             </View>
           </View>
         </View>
 
-        <Pressable onPress={onCommitPress} style={[styles.btn, commitment?.status === 'approved' ? styles.btnRed : styles.btnBlack]}>
-          <Text style={styles.btnText}>{buttonText}</Text>
+        {!!event.tags?.length && (
+          <View style={[styles.tagsWrap, { marginBottom: 18 }]}>
+            {event.tags.map((tag: string) => (
+              <View key={tag} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <Pressable
+          onPress={primaryAction}
+          disabled={busy || (ended && !isOrganizer)}
+          style={[
+            styles.btn,
+            isOrganizer
+              ? styles.btnIndigo
+              : ended
+              ? styles.btnGray
+              : commitment
+              ? styles.btnRed
+              : styles.btnBlack,
+            (busy || (ended && !isOrganizer)) && styles.btnDisabled,
+          ]}
+        >
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>{primaryLabel}</Text>
+          )}
         </Pressable>
       </ScrollView>
     </View>
   );
 }
 
+/** Chooses the status banner shown above the fold. */
+function buildBanner({
+  commitment,
+  ended,
+  isOrganizer,
+  event,
+}: {
+  commitment: UserCommitment | null;
+  ended: boolean;
+  isOrganizer: boolean;
+  event: any;
+}) {
+  if (isOrganizer) {
+    const pending = Number(event.pendingCount || 0);
+    return {
+      Icon: Settings,
+      title: 'You are the organizer',
+      desc: pending
+        ? `${pending} person${pending === 1 ? '' : 's'} waiting for your approval.`
+        : 'Manage attendees, approvals and the waitlist from here.',
+      style: styles.bannerIndigo,
+    };
+  }
+
+  if (ended && commitment?.status === 'confirmed') {
+    return {
+      Icon: CheckCircle,
+      title: 'You attended this event',
+      desc: 'Share how it went by rating the organizer.',
+      style: styles.bannerGreen,
+    };
+  }
+
+  if (!commitment) return null;
+
+  if (commitment.paymentStatus === 'pending' && Number(event.cost) > 0) {
+    return {
+      Icon: AlertCircle,
+      title: 'Payment required',
+      desc: 'Your spot is held until payment completes.',
+      style: styles.bannerOrange,
+    };
+  }
+
+  if (commitment.status === 'confirmed') {
+    return {
+      Icon: CheckCircle,
+      title: "You're going!",
+      desc: 'Your spot is confirmed. See you there.',
+      style: styles.bannerGreen,
+    };
+  }
+
+  if (commitment.status === 'waitlisted') {
+    return {
+      Icon: AlertCircle,
+      title: 'On the waitlist',
+      desc: "You'll be moved in automatically if a spot opens up.",
+      style: styles.bannerOrange,
+    };
+  }
+
+  if (commitment.status === 'declined') {
+    return {
+      Icon: AlertCircle,
+      title: 'Request declined',
+      desc: 'The organizer could not fit you in this time.',
+      style: styles.bannerRed,
+    };
+  }
+
+  return {
+    Icon: AlertCircle,
+    title: 'Pending approval',
+    desc: 'The organizer will review your request shortly.',
+    style: styles.bannerBlue,
+  };
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#fff' },
+  centered: { justifyContent: 'center', alignItems: 'center', padding: 24 },
   header: {
-    paddingHorizontal: 12, paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e5e7eb',
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e5e7eb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   iconBtn: { padding: 8, borderRadius: 999 },
+  iconBtnNeutral: { backgroundColor: '#f3f4f6' },
   heartIdle: { backgroundColor: '#f3f4f6' },
   heartActive: { backgroundColor: '#fee2e2' },
 
-  title: { textAlign: 'center', fontSize: 20, fontWeight: '700', color: '#111827', marginVertical: 12 },
+  title: { textAlign: 'center', fontSize: 22, fontWeight: '700', color: '#111827', marginVertical: 12 },
 
   bannerBase: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 14,
   },
   bannerTitle: { fontSize: 14, fontWeight: '600', color: '#111827' },
   bannerDesc: { fontSize: 13, color: '#374151', marginTop: 2 },
-  bannerCancel: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#00000022', backgroundColor: '#ffffffaa' },
-  bannerCancelText: { fontSize: 12, color: '#111827' },
-  bannerYellow: { backgroundColor: '#fef9c3', borderColor: '#fde68a' },
   bannerOrange: { backgroundColor: '#ffedd5', borderColor: '#fed7aa' },
   bannerBlue: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
   bannerGreen: { backgroundColor: '#dcfce7', borderColor: '#bbf7d0' },
+  bannerRed: { backgroundColor: '#fef2f2', borderColor: '#fecaca' },
+  bannerIndigo: { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' },
 
   orgRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 10, borderRadius: 10, marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#f9fafb',
+    marginBottom: 16,
   },
-  orgAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center' },
+  orgAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   orgName: { fontSize: 15, fontWeight: '600', color: '#111827' },
+  msgBtn: { padding: 10, borderRadius: 999, backgroundColor: '#e5e7eb' },
 
   h4: { fontSize: 15, fontWeight: '600', color: '#111827', marginBottom: 6 },
-  h5: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  body: { fontSize: 13, color: '#374151', lineHeight: 18 },
+  body: { fontSize: 14, color: '#374151', lineHeight: 20 },
 
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   detailTitle: { fontSize: 13, color: '#111827', fontWeight: '600' },
-  coinBox: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  subtle: { fontSize: 12, color: '#6b7280' },
-
-  infoBox: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 12, marginBottom: 16 },
-  infoText: { fontSize: 12, color: '#374151', lineHeight: 18 },
+  subtle: { fontSize: 12, color: '#6b7280', marginTop: 1 },
+  pendingHint: { fontSize: 12, color: '#4f46e5', fontWeight: '600', marginTop: 3 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  pillText: { fontSize: 11, color: '#4b5563', fontWeight: '600' },
 
   tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: { backgroundColor: '#f3f4f6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
   tagText: { fontSize: 12, color: '#374151' },
 
-  btn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  btn: {
+    flexDirection: 'row',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   btnText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   btnBlack: { backgroundColor: '#111827' },
-  btnBlue: { backgroundColor: '#2563eb' },
-  btnGray: { backgroundColor: '#6b7280' },
+  btnIndigo: { backgroundColor: '#4f46e5' },
+  btnGray: { backgroundColor: '#9ca3af' },
   btnRed: { backgroundColor: '#dc2626' },
+  btnDisabled: { opacity: 0.6 },
 });

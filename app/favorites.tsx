@@ -12,28 +12,34 @@ import {
   Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { dataService, authService } from '../Backend/firebase';
+import { dataService } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
+import { formatEventDate, formatEventTime, byStartAscending } from '../lib/eventTime';
 import { Event } from '../lib/types';
 import FloatingNavigation from '../components/FloatingNavigation';
 import { preloadEventFeed } from '../lib/eventFeed';
 
 export default function FavoritesScreen() {
+  const { user, initializing } = useAuth();
   const [favoriteEvents, setFavoriteEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (initializing) return;
+
+    if (!user) {
+      setLoading(false);
+      Alert.alert('Sign in required', 'Please sign in to view your favorites.', [
+        { text: 'OK', onPress: () => router.replace('/login') },
+      ]);
+      return;
+    }
+
     loadFavorites();
-  }, []);
+  }, [initializing, user]);
 
   const loadFavorites = async () => {
     try {
-      const user = authService.getCurrentUser();
-      if (!user) {
-        Alert.alert('Authentication Required', 'Please sign in to view your favorites.', [
-          { text: 'OK', onPress: () => router.replace('/login') }
-        ]);
-        return;
-      }
 
       const favoriteIds = (await dataService.getUserFavorites()).map((id) => id.toString());
       const idsSet = new Set(favoriteIds);
@@ -49,8 +55,9 @@ export default function FavoritesScreen() {
       const missingEvents = await Promise.all(missingIds.map((id) => dataService.getEvent(id)));
       const backfilled = missingEvents.filter(Boolean) as Event[];
 
-      const combined = [...fromFeed, ...backfilled];
-      setFavoriteEvents(combined);
+      // Favorites are shown soonest-first, and finished events stay visible so
+      // people can still open them to rate.
+      setFavoriteEvents([...fromFeed, ...backfilled].sort(byStartAscending));
     } catch (error) {
       console.error('Error loading favorites:', error);
       Alert.alert('Error', 'Failed to load favorites.');
@@ -126,7 +133,7 @@ export default function FavoritesScreen() {
         </Pressable>
         
         <Text style={styles.eventDetails}>
-          {item.date} • {item.time}
+          {formatEventDate(item)} • {formatEventTime(item)}
         </Text>
         <Text style={styles.eventLocation}>{item.location}</Text>
         <View style={styles.tagsContainer}>

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import FloatingNavigation from '../components/FloatingNavigation';
-import DiscoverView from './home/DiscoverView';
-import CardsView from './home/CardsView';
-import MapView from './home/MapView';
+import DiscoverView from '../components/home/DiscoverView';
+import CardsView from '../components/home/CardsView';
+import MapView from '../components/home/MapView';
 
 type ViewMode = 'discover' | 'cards' | 'map';
 

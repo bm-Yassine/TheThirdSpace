@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,11 +15,11 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
 import {
-  authService,
   dataService,
   type ChatMessage,
   type ConversationSummary,
 } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
 
 const toDate = (value: any): Date | null => {
   if (!value) return null;
@@ -47,94 +47,102 @@ export default function ChatsScreen() {
   const conversationParam = String(params.conversationId || '');
   const otherUserIdParam = String(params.otherUserId || '');
 
+  const { user, initializing } = useAuth();
+  const currentUid = user?.uid || '';
+
   const [loading, setLoading] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sending, setSending] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const currentUid = authService.getCurrentUser()?.uid || '';
+  const messagesRef = useRef<FlatList<ChatMessage>>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((c) => c.id === selectedConversationId) || null,
     [conversations, selectedConversationId]
   );
 
-  const loadConversations = useCallback(async () => {
-    const list = await dataService.getUserConversations();
-    setConversations(list);
-    return list;
-  }, []);
-
-  const loadMessages = useCallback(async (conversationId: string) => {
-    setLoadingMessages(true);
-    try {
-      const list = await dataService.getConversationMessages(conversationId);
-      setMessages(list);
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, []);
-
+  // Live conversation list - the inbox reorders itself as messages arrive.
   useEffect(() => {
-    const init = async () => {
-      const currentUser = authService.getCurrentUser();
-      if (!currentUser) {
-        Alert.alert('Login Required', 'Please sign in to view chats.', [
-          { text: 'Cancel', style: 'cancel', onPress: () => router.replace('/home') },
-          { text: 'Sign In', onPress: () => router.replace('/login') },
-        ]);
+    if (initializing) return;
+
+    if (!user) {
+      setLoading(false);
+      Alert.alert('Sign in required', 'Please sign in to view your chats.', [
+        { text: 'Cancel', style: 'cancel', onPress: () => router.replace('/home') },
+        { text: 'Sign In', onPress: () => router.replace('/login') },
+      ]);
+      return;
+    }
+
+    const unsubscribe = dataService.subscribeToConversations(
+      (list) => {
+        setConversations(list);
         setLoading(false);
-        return;
-      }
-
-      try {
-        const list = await loadConversations();
-
-        if (otherUserIdParam) {
-          const conversationId = await dataService.getOrCreateConversation(otherUserIdParam);
-          await loadConversations();
-          setSelectedConversationId(conversationId);
-          await loadMessages(conversationId);
-          return;
-        }
-
-        if (conversationParam) {
-          setSelectedConversationId(conversationParam);
-          await loadMessages(conversationParam);
-          return;
-        }
-
-        if (list.length > 0) {
-          setSelectedConversationId(list[0].id);
-          await loadMessages(list[0].id);
-        }
-      } catch (error) {
-        console.error('Failed to initialize chats:', error);
-        Alert.alert('Error', 'Could not load chats right now.');
-      } finally {
+      },
+      (error) => {
+        console.error('Conversation stream failed:', error);
         setLoading(false);
       }
-    };
+    );
 
-    init();
-  }, [conversationParam, loadConversations, loadMessages, otherUserIdParam]);
+    return unsubscribe;
+  }, [initializing, user]);
 
-  const openConversation = async (conversationId: string) => {
+  // Deep link from "Message organizer": open (or create) that thread.
+  useEffect(() => {
+    if (initializing || !user) return;
+
+    if (otherUserIdParam) {
+      dataService
+        .getOrCreateConversation(otherUserIdParam)
+        .then(setSelectedConversationId)
+        .catch(() => Alert.alert('Error', 'Could not open that conversation.'));
+      return;
+    }
+
+    if (conversationParam) setSelectedConversationId(conversationParam);
+  }, [initializing, user, otherUserIdParam, conversationParam]);
+
+  // Live messages for the open thread.
+  useEffect(() => {
+    if (!selectedConversationId) {
+      setMessages([]);
+      return;
+    }
+
+    const unsubscribe = dataService.subscribeToConversationMessages(
+      selectedConversationId,
+      (list) => {
+        setMessages(list);
+        requestAnimationFrame(() => messagesRef.current?.scrollToEnd({ animated: true }));
+      },
+      (error) => console.error('Message stream failed:', error)
+    );
+
+    return unsubscribe;
+  }, [selectedConversationId]);
+
+  const openConversation = (conversationId: string) => {
     setSelectedConversationId(conversationId);
-    await loadMessages(conversationId);
   };
 
   const onSend = async () => {
-    if (!selectedConversationId || !draft.trim()) return;
+    const text = draft.trim();
+    if (!selectedConversationId || !text || sending) return;
+
+    setDraft('');
+    setSending(true);
     try {
-      const text = draft;
-      setDraft('');
       await dataService.sendMessage(selectedConversationId, text);
-      await Promise.all([loadMessages(selectedConversationId), loadConversations()]);
+      // No manual refetch: the snapshot listener delivers the new message.
     } catch (error) {
       console.error('Send message failed:', error);
+      setDraft(text); // Restore so the user does not lose what they typed.
       Alert.alert('Error', 'Could not send your message.');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -168,7 +176,7 @@ export default function ChatsScreen() {
     );
   };
 
-  if (loading) {
+  if (initializing || loading) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color="#111827" />
@@ -210,18 +218,19 @@ export default function ChatsScreen() {
         />
       ) : (
         <View style={{ flex: 1 }}>
-          {loadingMessages ? (
-            <View style={[styles.centered, { flex: 1 }]}>
-              <ActivityIndicator size="small" color="#111827" />
-            </View>
-          ) : (
-            <FlatList
-              data={messages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderMessage}
-              contentContainerStyle={styles.messagesContent}
-            />
-          )}
+          <FlatList
+            ref={messagesRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            contentContainerStyle={styles.messagesContent}
+            onContentSizeChange={() => messagesRef.current?.scrollToEnd({ animated: false })}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>No messages yet. Say hello!</Text>
+              </View>
+            }
+          />
 
           <View style={styles.inputBar}>
             <TextInput
@@ -231,7 +240,11 @@ export default function ChatsScreen() {
               style={styles.input}
               multiline
             />
-            <TouchableOpacity style={styles.sendButton} onPress={onSend}>
+            <TouchableOpacity
+              style={[styles.sendButton, (!draft.trim() || sending) && { opacity: 0.5 }]}
+              onPress={onSend}
+              disabled={!draft.trim() || sending}
+            >
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
           </View>

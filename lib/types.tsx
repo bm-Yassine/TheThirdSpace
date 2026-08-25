@@ -19,6 +19,18 @@ export type EventMedia = {
   durationMs?: number;
 };
 
+export type AttendeeStatus = 'confirmed' | 'pending' | 'waitlisted' | 'declined';
+
+export type Attendee = {
+  uid: string;
+  name: string;
+  photoURL?: string | null;
+  avatar?: string;
+  status: AttendeeStatus;
+  joinedAt?: any;
+  paymentStatus?: 'pending' | 'completed' | 'not_required';
+};
+
 export type Event = {
   id: string | number;
   title: string;
@@ -26,7 +38,15 @@ export type Event = {
   type?: string;
   imageUrl?: string;
   organizer: Organizer;
+  createdBy?: string;
+  /** ISO timestamp for when the event starts. Authoritative since the date picker landed. */
+  startsAt?: string | any;
+  /** Derived from startsAt + durationMinutes at write time, for range queries. */
+  endsAt?: string | any;
+  durationMinutes?: number;
+  /** @deprecated Legacy free-text fields kept for events created before `startsAt`. */
   time?: string;
+  /** @deprecated see `startsAt` */
   date?: string;
   timeFlexible?: boolean;
   location?: string;
@@ -40,9 +60,46 @@ export type Event = {
   music?: EventMusic;
   media?: EventMedia[];
   requiresApproval?: boolean;
+  attendeesList?: Attendee[];
+  waitlistCount?: number;
+  pendingCount?: number;
+  status?: 'active' | 'cancelled';
   isFavorite?: boolean;
   isCommitted?: boolean;
   commitmentStatus?: 'pending' | 'approved' | null;
   commitmentReason?: 'approval' | 'waitlist' | 'direct';
   paymentStatus?: 'pending' | 'completed';
+};
+
+export type RatingQuality = {
+  id: string;
+  label: string;
+  emoji: string;
+  description: string;
+};
+
+/** One person rating one other person for one event. Id: `${eventId}_${raterUid}_${rateeUid}`. */
+export type Rating = {
+  id: string;
+  eventId: string;
+  eventTitle?: string;
+  raterUid: string;
+  rateeUid: string;
+  /** Which direction the rating flows, used to bucket organizer vs attendee reputation. */
+  rateeRole: 'organizer' | 'attendee';
+  qualityId: string;
+  qualityLabel: string;
+  qualityEmoji: string;
+  /** 1-5 stars, optional alongside the qualitative badge. */
+  stars?: number;
+  comment?: string;
+  createdAt?: any;
+};
+
+/** Denormalised reputation stored on the user document. */
+export type ReputationSummary = {
+  ratingCount: number;
+  averageStars: number;
+  /** qualityId -> times awarded, used for the "Super Organized ×15" badges. */
+  qualityCounts: Record<string, number>;
 };

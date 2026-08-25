@@ -13,7 +13,9 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import { dataService, authService } from '../../Backend/firebase';
+import { dataService } from '../../Backend/firebase';
+import { useAuth } from '../../lib/auth';
+import { formatEventDate, formatEventTime } from '../../lib/eventTime';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 
@@ -28,7 +30,8 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
   const initialEvents = getCachedEventFeed()?.slice(0, 25) ?? [];
   const [events, setEvents] = useState<Event[]>(initialEvents);
   const [loading, setLoading] = useState(initialEvents.length === 0);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user } = useAuth();
+  const isLoggedIn = !!user;
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
 
@@ -40,28 +43,26 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
           dataService.getUserCommitments(),
         ]);
         setFavoriteIds(new Set(favorites.map((id) => id.toString())));
-        setJoinedIds(new Set(commitments.map((c: any) => c.eventId.toString())));
+        setJoinedIds(
+          new Set(
+            commitments
+              .filter((c) => c.status !== 'declined')
+              .map((c) => String(c.eventId))
+          )
+        );
       } catch {
         setFavoriteIds(new Set());
         setJoinedIds(new Set());
       }
     };
 
-    const user = authService.getCurrentUser();
-    setIsLoggedIn(!!user);
-    if (user) hydrateUserState();
-
-    const unsubscribe = authService.onAuthStateChange((nextUser) => {
-      setIsLoggedIn(!!nextUser);
-      if (nextUser) hydrateUserState();
-      else {
-        setFavoriteIds(new Set());
-        setJoinedIds(new Set());
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
+    if (user) {
+      hydrateUserState();
+    } else {
+      setFavoriteIds(new Set());
+      setJoinedIds(new Set());
+    }
+  }, [user]);
 
   useEffect(() => {
     const cachedEvents = getCachedEventFeed();
@@ -294,7 +295,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
             
             <View style={styles.cardDetails}>
               <Text style={styles.cardDetailText}>
-                {`${event.date} • ${event.time}`}
+                {`${formatEventDate(event)} • ${formatEventTime(event)}`}
               </Text>
               <Text style={styles.cardDetailText}>{event.location}</Text>
               <Text style={styles.cardDetailText}>

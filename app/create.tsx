@@ -14,18 +14,24 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
-import { dataService, authService, type UserProfile } from '../Backend/firebase';
+import { dataService, type UserProfile } from '../Backend/firebase';
+import { useAuth } from '../lib/auth';
+import EventScheduleField, {
+  defaultSchedule,
+  type EventSchedule,
+} from '../components/EventScheduleField';
+import { combineDateAndTime } from '../lib/eventTime';
 import { upsertCachedEvent } from '../lib/eventFeed';
 import * as ImagePicker from 'expo-image-picker';
 import type { Event, EventMedia, EventMusic } from '../lib/types';
 
 export default function CreateEventScreen() {
+  const { user, profile: authProfile, initializing, loadingProfile } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState<{
     title: string;
     type: string;
-    time: string;
     timeFlexible: boolean;
     location: string;
     minPeople: string;
@@ -41,7 +47,6 @@ export default function CreateEventScreen() {
   }>({
     title: '',
     type: '',
-    time: '',
     timeFlexible: false,
     location: '',
     minPeople: '',
@@ -57,58 +62,42 @@ export default function CreateEventScreen() {
   });
 
   const [newTag, setNewTag] = useState('');
+  const [schedule, setSchedule] = useState<EventSchedule>(defaultSchedule);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Check authentication and load user profile
+  // Waits for the auth provider to settle before deciding the user is signed
+  // out — a synchronous currentUser read is null during web session restore.
   useEffect(() => {
-    const checkAuth = async () => {
-      const user = authService.getCurrentUser();
-      if (!user) {
-        Alert.alert('Authentication Required', 'Please sign in to create an event.', [
-          { text: 'OK', onPress: () => router.replace('/login') }
-        ]);
-        return;
-      }
+    if (initializing) return;
 
-      try {
-        let profile = await dataService.getCurrentUserProfile();
-        
-        // If profile doesn't exist, create it (fallback for edge cases)
-        if (!profile) {
-          console.log('Profile not found, creating default profile...');
-          profile = await dataService.createUserProfile(user.uid, {
-            email: user.email || '',
-            displayName: user.displayName || 'User',
-            photoURL: user.photoURL,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-        }
-        
-        setUserProfile(profile);
-      } catch (error) {
-        console.error('Error loading profile:', error);
-        // Don't redirect back, just show error and allow retry
-        Alert.alert(
-          'Profile Load Error', 
-          'There was an issue loading your profile. You can still try to create the event.',
-          [{ text: 'OK' }]
-        );
-        // Set a minimal profile to allow event creation
-        setUserProfile({
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.displayName || 'User',
-          photoURL: user.photoURL || null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to create an event.', [
+        { text: 'OK', onPress: () => router.replace('/login') },
+      ]);
+      setLoading(false);
+      return;
+    }
 
-    checkAuth();
-  }, []);
+    if (authProfile) {
+      setUserProfile(authProfile);
+      setLoading(false);
+      return;
+    }
+
+    if (!loadingProfile) {
+      // Provider finished without a profile: fall back to the auth identity so
+      // creation is still possible rather than dead-ending the user.
+      setUserProfile({
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || 'User',
+        photoURL: user.photoURL || null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      setLoading(false);
+    }
+  }, [initializing, user, authProfile, loadingProfile]);
 
   const activityTypes = [
     'Sports',
@@ -191,7 +180,7 @@ export default function CreateEventScreen() {
   };
 
   const handleSubmit = async () => {
-    const currentUser = authService.getCurrentUser();
+    const currentUser = user;
     if (!currentUser) {
       Alert.alert('Authentication Required', 'Please sign in to create an event.', [
         { text: 'OK', onPress: () => router.replace('/login') },
@@ -209,11 +198,34 @@ export default function CreateEventScreen() {
       return;
     }
 
-    if (!formData.title || !formData.description || !formData.location || !formData.time || !formData.type) {
+    if (!formData.title || !formData.description || !formData.location || !formData.type) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
+    const startsAt = combineDateAndTime(schedule.date, schedule.time);
+    if (!startsAt) {
+      Alert.alert('Invalid date', 'Please pick a valid date and start time.');
+      return;
+    }
+
+    if (startsAt.getTime() < Date.now() - 60 * 1000) {
+      Alert.alert('Date in the past', 'Pick a start time in the future so people can still join.');
+      return;
+    }
+
+    const minCapacity = parseInt(formData.minPeople, 10);
+    const maxCapacity = parseInt(formData.maxPeople, 10);
+    if (
+      Number.isFinite(minCapacity) &&
+      Number.isFinite(maxCapacity) &&
+      minCapacity > maxCapacity
+    ) {
+      Alert.alert('Check capacity', 'The minimum number of people cannot exceed the maximum.');
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const parsedCost = formData.cost ? parseFloat(formData.cost.replace('$', '')) || 0 : 0;
       const maxAttendees = parseInt(formData.maxPeople) || undefined;
@@ -237,9 +249,13 @@ export default function CreateEventScreen() {
         type: formData.type,
         description: formData.description,
         location: formData.location,
-        time: formData.time,
+        // Authoritative schedule. `date`/`time` are also written as readable
+        // strings so anything still reading the legacy fields keeps working.
+        startsAt: startsAt.toISOString(),
+        durationMinutes: schedule.durationMinutes,
+        date: startsAt.toLocaleDateString(),
+        time: startsAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }),
         timeFlexible: formData.timeFlexible,
-        date: new Date().toLocaleDateString(), // You might want to add a date picker
         tags: formData.tags,
         cost: parsedCost,
         requiresApproval: !formData.openToAll,
@@ -271,12 +287,18 @@ export default function CreateEventScreen() {
       };
       upsertCachedEvent(createdEvent, { maxItems: 60 });
 
-      Alert.alert('Success', 'Event created successfully!', [
-        { text: 'OK', onPress: () => router.replace('/home') }
+      Alert.alert('Event created', 'Your event is now live in Discover.', [
+        {
+          text: 'View it',
+          onPress: () => router.replace({ pathname: '/activity_detail', params: { eventId } }),
+        },
+        { text: 'Done', onPress: () => router.replace('/home') },
       ]);
     } catch (error) {
       console.error('Error creating event:', error);
       Alert.alert('Error', 'Failed to create event. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -302,11 +324,21 @@ export default function CreateEventScreen() {
         <Text style={styles.headerTitle}>Create Event</Text>
         <TouchableOpacity
           onPress={handleSubmit}
-          disabled={formData.tags.length < 3}
-          style={formData.tags.length >= 3 ? styles.createButtonEnabled : styles.createButtonDisabled}
+          disabled={formData.tags.length < 3 || submitting}
+          style={
+            formData.tags.length >= 3 && !submitting
+              ? styles.createButtonEnabled
+              : styles.createButtonDisabled
+          }
         >
-          <Text style={formData.tags.length >= 3 ? styles.createTextEnabled : styles.createTextDisabled}>
-            Create
+          <Text
+            style={
+              formData.tags.length >= 3 && !submitting
+                ? styles.createTextEnabled
+                : styles.createTextDisabled
+            }
+          >
+            {submitting ? 'Creating…' : 'Create'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -360,18 +392,12 @@ export default function CreateEventScreen() {
           </ScrollView>
         </View>
 
-        {/* Time */}
+        {/* When */}
         <View style={styles.formCard}>
-          <Text style={styles.label}>Time *</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.time}
-            onChangeText={(value) => handleInputChange('time', value)}
-            placeholder="e.g., Saturday 3:00 PM"
-            placeholderTextColor="#999"
-          />
+          <Text style={styles.label}>When *</Text>
+          <EventScheduleField value={schedule} onChange={setSchedule} />
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Time is flexible</Text>
+            <Text style={styles.switchLabel}>Start time is flexible</Text>
             <Switch
               value={formData.timeFlexible}
               onValueChange={(value) => handleInputChange('timeFlexible', value)}
