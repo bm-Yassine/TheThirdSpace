@@ -16,7 +16,7 @@ import {
 import { router } from 'expo-router';
 import { dataService } from '../../Backend/firebase';
 import { useAuth } from '../../lib/auth';
-import { formatEventDate, formatEventTime } from '../../lib/eventTime';
+import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
@@ -484,7 +484,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                   <View style={styles.detailRow}>
                     <Text style={styles.detailIcon}>🕐</Text>
                     <Text style={styles.detailText}>
-                      {formatEventDate(event)} • {formatEventTime(event)}
+                      {formatEventDateLabel(event)} • {formatEventTimeRange(event)}
                     </Text>
                   </View>
 

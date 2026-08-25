@@ -132,6 +132,49 @@ export const formatEventTime = (event: any): string => {
   return start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 };
 
+/**
+ * "2:00 PM - 4:00 PM". The discovery card shows the full span because how long
+ * something runs is part of deciding whether to go.
+ */
+export const formatEventTimeRange = (event: any): string => {
+  if (event?.timeFlexible) return 'Flexible';
+
+  const start = getEventStart(event);
+  if (!start) {
+    return typeof event?.time === 'string' && event.time ? event.time : 'Time TBD';
+  }
+
+  const end = getEventEnd(event);
+  const startLabel = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (!end) return startLabel;
+
+  const endLabel = end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return `${startLabel} - ${endLabel}`;
+};
+
+/**
+ * Prefers a human label ("Today", "Tomorrow") over a calendar date for events
+ * in the next couple of days, falling back to the date beyond that.
+ */
+export const formatEventDateLabel = (event: any, now: Date = new Date()): string => {
+  const start = getEventStart(event);
+  if (!start) return formatEventDate(event);
+
+  const startOfDay = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayDiff = Math.round(
+    (startOfDay(start) - startOfDay(now)) / (24 * 60 * 60 * 1000)
+  );
+
+  if (dayDiff === 0) return 'Today';
+  if (dayDiff === 1) return 'Tomorrow';
+  if (dayDiff === -1) return 'Yesterday';
+  if (dayDiff > 1 && dayDiff < 7) {
+    return start.toLocaleDateString(undefined, { weekday: 'long' });
+  }
+  return formatEventDate(event);
+};
+
 export const formatEventDateTime = (event: any): string =>
   `${formatEventDate(event)} • ${formatEventTime(event)}`;
 

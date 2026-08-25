@@ -26,7 +26,7 @@ import { dataService, type UserCommitment } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import {
   formatEventDate,
-  formatEventTime,
+  formatEventTimeRange,
   formatRelativeToNow,
   hasEventEnded,
 } from '../lib/eventTime';
@@ -372,7 +372,7 @@ export default function ActivityDetailScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.detailTitle}>Date & Time</Text>
               <Text style={styles.subtle}>
-                {formatEventDate(event)} • {formatEventTime(event)}
+                {formatEventDate(event)} • {formatEventTimeRange(event)}
               </Text>
             </View>
             {!!formatRelativeToNow(event) && (

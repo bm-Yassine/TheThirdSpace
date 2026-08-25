@@ -15,7 +15,7 @@ import {
 import { router } from 'expo-router';
 import { dataService } from '../../Backend/firebase';
 import { useAuth } from '../../lib/auth';
-import { formatEventDate, formatEventTime } from '../../lib/eventTime';
+import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 
@@ -295,7 +295,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
             
             <View style={styles.cardDetails}>
               <Text style={styles.cardDetailText}>
-                {`${formatEventDate(event)} • ${formatEventTime(event)}`}
+                {`${formatEventDateLabel(event)} • ${formatEventTimeRange(event)}`}
               </Text>
               <Text style={styles.cardDetailText}>{event.location}</Text>
               <Text style={styles.cardDetailText}>

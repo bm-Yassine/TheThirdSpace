@@ -8,6 +8,8 @@ import {
   hasEventEnded,
   isUpcoming,
   byStartAscending,
+  formatEventTimeRange,
+  formatEventDateLabel,
   DEFAULT_EVENT_DURATION_MINUTES,
 } from '../eventTime';
 
@@ -130,5 +132,60 @@ describe('formatEventDate', () => {
   it('falls back to the legacy string rather than showing "Invalid Date"', () => {
     assert.equal(formatEventDate({ date: 'Next Friday' }), 'Next Friday');
     assert.equal(formatEventDate({}), 'Date TBD');
+  });
+});
+
+describe('formatEventTimeRange', () => {
+  it('shows the full span, matching the design intent', () => {
+    const start = new Date();
+    start.setHours(14, 0, 0, 0);
+    const label = formatEventTimeRange({ startsAt: start.toISOString(), durationMinutes: 120 });
+    assert.match(label, /2:00/);
+    assert.match(label, /4:00/);
+    assert.match(label, /-/);
+  });
+
+  it('honours the flexible-time flag', () => {
+    assert.equal(formatEventTimeRange({ startsAt: new Date().toISOString(), timeFlexible: true }), 'Flexible');
+  });
+
+  it('falls back to the legacy string when there is no parseable start', () => {
+    assert.equal(formatEventTimeRange({ time: '8:00 AM - 9:30 AM' }), '8:00 AM - 9:30 AM');
+    assert.equal(formatEventTimeRange({}), 'Time TBD');
+  });
+});
+
+describe('formatEventDateLabel', () => {
+  const now = new Date('2026-05-13T12:00:00');
+
+  const at = (dayOffset: number) => {
+    const date = new Date(now);
+    date.setDate(now.getDate() + dayOffset);
+    date.setHours(19, 0, 0, 0);
+    return { startsAt: date.toISOString() };
+  };
+
+  it('uses Today and Tomorrow for the near term', () => {
+    assert.equal(formatEventDateLabel(at(0), now), 'Today');
+    assert.equal(formatEventDateLabel(at(1), now), 'Tomorrow');
+    assert.equal(formatEventDateLabel(at(-1), now), 'Yesterday');
+  });
+
+  it('uses a weekday name within the coming week', () => {
+    // 2026-05-13 is a Wednesday, so +3 days is Saturday.
+    assert.equal(formatEventDateLabel(at(3), now), 'Saturday');
+  });
+
+  it('falls back to a calendar date further out', () => {
+    const label = formatEventDateLabel(at(30), now);
+    assert.doesNotMatch(label, /Today|Tomorrow/);
+    assert.match(label, /Jun/);
+  });
+
+  it('is based on the calendar day, not a 24-hour window', () => {
+    // 11pm tonight is still "Today" even though it is 11 hours away.
+    const late = new Date(now);
+    late.setHours(23, 0, 0, 0);
+    assert.equal(formatEventDateLabel({ startsAt: late.toISOString() }, now), 'Today');
   });
 });
