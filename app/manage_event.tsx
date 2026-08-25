@@ -17,15 +17,19 @@ import {
   Clock,
   UserCheck,
   Star,
+  CreditCard,
 } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { dataService } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import { formatEventDate, formatEventTime, hasEventEnded } from '../lib/eventTime';
 import type { Attendee } from '../lib/types';
+import { isAwaitingPayment } from '../lib/participation';
+
+type SectionKey = 'pending' | 'unpaid' | 'confirmed' | 'waitlisted' | 'declined';
 
 type Section = {
-  key: 'pending' | 'confirmed' | 'waitlisted' | 'declined';
+  key: SectionKey;
   title: string;
   emptyText: string;
   Icon: typeof Users;
@@ -37,6 +41,12 @@ const SECTIONS: Section[] = [
     title: 'Awaiting your approval',
     emptyText: 'No requests waiting right now.',
     Icon: Clock,
+  },
+  {
+    key: 'unpaid',
+    title: 'Awaiting payment',
+    emptyText: '',
+    Icon: CreditCard,
   },
   { key: 'confirmed', title: 'Going', emptyText: 'Nobody has joined yet.', Icon: UserCheck },
   {
@@ -94,16 +104,25 @@ export default function ManageEventScreen() {
   const ended = !!event && hasEventEnded(event);
 
   const grouped = useMemo(() => {
-    const buckets: Record<Section['key'], Attendee[]> = {
+    const buckets: Record<SectionKey, Attendee[]> = {
       pending: [],
+      unpaid: [],
       confirmed: [],
       waitlisted: [],
       declined: [],
     };
+
     participants.forEach((participant) => {
-      const bucket = buckets[participant.status as Section['key']];
-      if (bucket) bucket.push(participant);
+      // `pending` covers two different situations. Someone who simply has not
+      // paid yet is not an approval decision for the organizer to make, so it
+      // gets its own bucket with no approve action.
+      const key: SectionKey = isAwaitingPayment(participant)
+        ? 'unpaid'
+        : (participant.status as SectionKey);
+
+      buckets[key]?.push(participant);
     });
+
     return buckets;
   }, [participants]);
 
@@ -204,7 +223,9 @@ export default function ManageEventScreen() {
 
         {SECTIONS.map((section) => {
           const rows = grouped[section.key];
-          if (section.key === 'declined' && rows.length === 0) return null;
+          if ((section.key === 'declined' || section.key === 'unpaid') && rows.length === 0) {
+            return null;
+          }
 
           return (
             <View key={section.key} style={styles.section}>
@@ -230,8 +251,8 @@ export default function ManageEventScreen() {
                       <Text style={styles.rowMeta}>
                         {section.key === 'waitlisted'
                           ? `Position ${index + 1} in queue`
-                          : participant.paymentStatus === 'pending'
-                          ? 'Payment pending'
+                          : section.key === 'unpaid'
+                          ? 'Has not completed payment'
                           : participant.paymentStatus === 'completed'
                           ? 'Paid'
                           : 'Free entry'}

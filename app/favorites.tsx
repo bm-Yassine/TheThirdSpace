@@ -80,14 +80,14 @@ export default function FavoritesScreen() {
 
   const handleEventClick = (eventId: number | string) => {
     router.push({
-      pathname: './activity_detail',
+      pathname: '/activity_detail',
       params: { eventId: eventId.toString() }
     });
   };
 
   const handleOrganizerClick = (organizerName: string, organizerUid?: string) => {
     router.push({
-      pathname: './organizer_info',
+      pathname: '/organizer_info',
       params: { organizerName, organizerUid: organizerUid || '' }
     });
   };

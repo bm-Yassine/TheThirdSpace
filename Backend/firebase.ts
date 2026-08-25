@@ -40,6 +40,12 @@ import {
   DEFAULT_EVENT_DURATION_MINUTES,
 } from '../lib/eventTime';
 import type { Attendee, AttendeeStatus, Rating, ReputationSummary } from '../lib/types';
+import {
+  counterChanges,
+  decideJoinOutcome,
+  decidePromotionOutcome,
+  normalizeStatus,
+} from '../lib/participation';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -185,49 +191,17 @@ const dateToMillis = (value: any) => {
   return new Date(value).getTime() || 0;
 };
 
-/**
- * Maps historical status values onto the current vocabulary.
- * Documents written before the participant subcollection used
- * `'approved'` where we now use `'confirmed'`, and expressed the waitlist as
- * `status: 'pending'` plus `reason: 'waitlist'`.
- */
-const normalizeStatus = (value: any): AttendeeStatus => {
-  if (value === 'approved') return 'confirmed';
-  if (value === 'confirmed' || value === 'pending' || value === 'waitlisted' || value === 'declined') {
-    return value;
-  }
-  return 'pending';
-};
-
-/** Which denormalised counter each status feeds. `declined` counts toward nothing. */
-const COUNTER_FIELD: Partial<Record<AttendeeStatus, string>> = {
-  confirmed: 'attendees',
-  pending: 'pendingCount',
-  waitlisted: 'waitlistCount',
-};
-
-/**
- * Builds the counter increments for a status transition, so every write path
- * keeps `attendees` / `pendingCount` / `waitlistCount` consistent.
- * Pass `null` for `from` on a first join, or `null` for `to` on a removal.
- */
+/** Wraps the tested pure counter math in Firestore increment() sentinels. */
 const counterDeltaFor = (
   from: AttendeeStatus | null,
   to: AttendeeStatus | null
-): Record<string, any> => {
-  const delta: Record<string, number> = {};
-
-  const fromField = from ? COUNTER_FIELD[from] : undefined;
-  const toField = to ? COUNTER_FIELD[to] : undefined;
-  if (fromField === toField) return {};
-
-  if (fromField) delta[fromField] = (delta[fromField] || 0) - 1;
-  if (toField) delta[toField] = (delta[toField] || 0) + 1;
-
-  return Object.fromEntries(
-    Object.entries(delta).map(([field, amount]) => [field, increment(amount)])
+): Record<string, any> =>
+  Object.fromEntries(
+    Object.entries(counterChanges(from, to)).map(([field, amount]) => [
+      field,
+      increment(amount),
+    ])
   );
-};
 
 const toOrganizerUid = (organizerName?: string | null) => {
   const normalized = (organizerName || 'organizer')
@@ -570,29 +544,14 @@ export const dataService = {
         };
       }
 
-      const confirmedCount = Number(eventData.attendees || 0);
-      const maxAttendees = Number(eventData.maxAttendees || 0);
-      const isFull = maxAttendees > 0 && confirmedCount >= maxAttendees;
       const cost = Number(eventData.cost || 0);
-      const needsPayment = cost > 0 && !options?.paymentCompleted;
-      const needsApproval = !!eventData.requiresApproval;
-
-      let status: AttendeeStatus;
-      let reason: CommitmentReason;
-
-      if (needsPayment) {
-        status = 'pending';
-        reason = 'payment';
-      } else if (isFull) {
-        status = 'waitlisted';
-        reason = 'waitlist';
-      } else if (needsApproval) {
-        status = 'pending';
-        reason = 'approval';
-      } else {
-        status = 'confirmed';
-        reason = 'direct';
-      }
+      const { status, reason } = decideJoinOutcome({
+        confirmedCount: Number(eventData.attendees || 0),
+        maxAttendees: Number(eventData.maxAttendees || 0),
+        cost,
+        requiresApproval: !!eventData.requiresApproval,
+        paymentCompleted: !!options?.paymentCompleted,
+      });
 
       const paymentStatus: PaymentStatus =
         cost <= 0 ? 'not_required' : options?.paymentCompleted ? 'completed' : 'pending';
@@ -727,15 +686,11 @@ export const dataService = {
 
       // A paid or approval-gated event promotes into `pending`, not straight in.
       const participantData = freshParticipant.data() as any;
-      const owesPayment =
-        Number(freshData.cost || 0) > 0 && participantData.paymentStatus !== 'completed';
-      const nextStatus: AttendeeStatus =
-        owesPayment || freshData.requiresApproval ? 'pending' : 'confirmed';
-      const nextReason: CommitmentReason = owesPayment
-        ? 'payment'
-        : freshData.requiresApproval
-        ? 'approval'
-        : 'promoted';
+      const { status: nextStatus, reason: nextReason } = decidePromotionOutcome({
+        cost: Number(freshData.cost || 0),
+        paymentCompleted: participantData.paymentStatus === 'completed',
+        requiresApproval: !!freshData.requiresApproval,
+      });
 
       const now = new Date();
       transaction.update(participantRef, { status: nextStatus, reason: nextReason, updatedAt: now });
@@ -796,6 +751,17 @@ export const dataService = {
         const cap = Number(eventData.maxAttendees || 0);
         if (cap > 0 && Number(eventData.attendees || 0) >= cap) {
           throw new Error('Event is at capacity');
+        }
+
+        // A paid event cannot be approved into a confirmed place until the
+        // money has actually settled, otherwise approving from the organizer
+        // screen would hand out free entry.
+        const participantData = participantSnap.data() as any;
+        if (
+          Number(eventData.cost || 0) > 0 &&
+          participantData.paymentStatus !== 'completed'
+        ) {
+          throw new Error('This person has not completed payment yet');
         }
       }
 

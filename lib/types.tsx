@@ -21,13 +21,23 @@ export type EventMedia = {
 
 export type AttendeeStatus = 'confirmed' | 'pending' | 'waitlisted' | 'declined';
 
+export type AttendeeReason = 'approval' | 'waitlist' | 'direct' | 'payment' | 'promoted';
+
 export type Attendee = {
   uid: string;
   name: string;
   photoURL?: string | null;
   avatar?: string;
   status: AttendeeStatus;
+  /**
+   * Why the participant is in their current status. This distinguishes the two
+   * kinds of `pending`: waiting on the organizer ('approval') versus waiting on
+   * their own payment ('payment'). The organizer must not be offered an
+   * "approve" action for the latter.
+   */
+  reason?: AttendeeReason;
   joinedAt?: any;
+  updatedAt?: any;
   paymentStatus?: 'pending' | 'completed' | 'not_required';
 };
 

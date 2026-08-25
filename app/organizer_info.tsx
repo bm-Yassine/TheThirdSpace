@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
 import { ArrowLeft, Calendar, History } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { dataService } from '../Backend/firebase';
+import { formatEventDate, formatEventTime, byStartAscending, byStartDescending, hasEventEnded } from '../lib/eventTime';
+import type { Rating, ReputationSummary } from '../lib/types';
 import { useAuth } from '../lib/auth';
 
 type Organizer = {
@@ -34,15 +36,6 @@ type ActivityStub = {
   attendees: number;
 };
 
-const mockOrganizerQualities = {
-  organizerQualities: [
-    { quality: 'Super Organized', emoji: '📋', count: 15 },
-    { quality: 'Very Welcoming', emoji: '🤗', count: 12 },
-    { quality: 'High Energy', emoji: '⚡', count: 9 },
-  ],
-  attendeeQuality: { quality: 'Highly Engaged', emoji: '🎯', count: 8 },
-};
-
 export default function OrganizerInfoScreen() {
   const { user: currentUser } = useAuth();
   const params = useLocalSearchParams();
@@ -57,6 +50,8 @@ export default function OrganizerInfoScreen() {
   const [upcomingActivities, setUpcomingActivities] = useState<ActivityStub[]>([]);
   const [pastActivities, setPastActivities] = useState<ActivityStub[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reputation, setReputation] = useState<ReputationSummary | null>(null);
+  const [ratings, setRatings] = useState<Rating[]>([]);
 
   useEffect(() => {
     loadOrganizerData();
@@ -85,34 +80,28 @@ export default function OrganizerInfoScreen() {
           stats: profile.stats,
         });
 
-        const events = await dataService.getEvents({ organizerId: profile.uid });
-        const now = new Date();
+        const [events, reputationSummary, receivedRatings] = await Promise.all([
+          dataService.getEvents({ organizerId: profile.uid }),
+          dataService.getReputation(profile.uid!).catch(() => null),
+          dataService.getUserRatings(profile.uid!).catch(() => [] as Rating[]),
+        ]);
+        setReputation(reputationSummary);
+        setRatings(receivedRatings);
 
-        const normalized = (events as any[]).map((event) => {
-          const dateText = event.date || '';
-          const parsedDate = new Date(dateText);
-          return {
-            id: String(event.id),
-            title: event.title || 'Untitled Event',
-            date: dateText || 'TBD',
-            time: event.time || 'TBD',
-            attendees: Number(event.attendees || 0),
-            parsedDate,
-          };
+        const toStub = (event: any) => ({
+          id: String(event.id),
+          title: event.title || 'Untitled Event',
+          date: formatEventDate(event),
+          time: formatEventTime(event),
+          attendees: Number(event.attendees || 0),
         });
 
-        const upcoming = normalized
-          .filter((e) => !Number.isNaN(e.parsedDate.getTime()) && e.parsedDate >= now)
-          .sort((a, b) => a.parsedDate.getTime() - b.parsedDate.getTime())
-          .map(({ parsedDate, ...rest }) => rest);
-
-        const past = normalized
-          .filter((e) => Number.isNaN(e.parsedDate.getTime()) || e.parsedDate < now)
-          .sort((a, b) => b.parsedDate.getTime() - a.parsedDate.getTime())
-          .map(({ parsedDate, ...rest }) => rest);
-
-        setUpcomingActivities(upcoming);
-        setPastActivities(past);
+        setUpcomingActivities(
+          (events as any[]).filter((e) => !hasEventEnded(e)).sort(byStartAscending).map(toStub)
+        );
+        setPastActivities(
+          (events as any[]).filter((e) => hasEventEnded(e)).sort(byStartDescending).map(toStub)
+        );
       } else {
         setOrganizer((prev) => ({
           ...prev,
@@ -128,10 +117,17 @@ export default function OrganizerInfoScreen() {
     }
   };
 
+  const topQualities = useMemo(() => {
+    if (!reputation?.qualityCounts) return [] as [string, number][];
+    return Object.entries(reputation.qualityCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 4);
+  }, [reputation]);
+
   const handleActivityClick = (activity: ActivityStub) => {
     router.push({
-      pathname: './activity_detail',
-      params: { eventId: activity.id.toString() }
+      pathname: '/activity_detail',
+      params: { eventId: activity.id.toString() },
     });
   };
 
@@ -176,7 +172,9 @@ export default function OrganizerInfoScreen() {
               <Text style={styles.statLabel}>Participated</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{organizer.stats?.rating || 0}</Text>
+              <Text style={styles.statValue}>
+                {reputation?.averageStars ? reputation.averageStars.toFixed(1) : '—'}
+              </Text>
               <Text style={styles.statLabel}>Rating</Text>
             </View>
           </View>
@@ -191,31 +189,42 @@ export default function OrganizerInfoScreen() {
             </View>
           )}
 
-          {/* Qualities */}
-          <View style={{ marginTop: 12 }}>
-            <Text style={styles.h4}>Top Qualities</Text>
+          {/* Reputation, aggregated from real ratings */}
+          <View style={{ marginTop: 14 }}>
+            <Text style={styles.h4}>Reputation</Text>
 
-            <Text style={[styles.subtle, { marginTop: 6 }]}>As a Host</Text>
-            <View style={{ gap: 8, marginTop: 4 }}>
-              {mockOrganizerQualities.organizerQualities.map((q, i) => (
-                <View key={i} style={[styles.qualityCard, styles.qualityBlue]}>
-                  <View style={styles.rowCenter}>
-                    <Text style={styles.qualityEmoji}>{q.emoji}</Text>
-                    <Text style={styles.qualityText}>{q.quality}</Text>
-                  </View>
-                  <Text style={styles.qualityMeta}>{q.count} votes</Text>
+            {!reputation || reputation.ratingCount === 0 ? (
+              <Text style={[styles.subtle, { marginTop: 6 }]}>
+                No ratings yet. Reputation appears once attendees rate an event that has
+                finished.
+              </Text>
+            ) : (
+              <>
+                <Text style={[styles.subtle, { marginTop: 6 }]}>
+                  {reputation.averageStars.toFixed(1)} average from {reputation.ratingCount} rating
+                  {reputation.ratingCount === 1 ? '' : 's'}
+                </Text>
+
+                <View style={{ gap: 8, marginTop: 8 }}>
+                  {topQualities.map(([label, count]) => {
+                    const sample = ratings.find(
+                      (rating) => (rating.qualityLabel || rating.qualityId) === label
+                    );
+                    return (
+                      <View key={label} style={[styles.qualityCard, styles.qualityBlue]}>
+                        <View style={styles.rowCenter}>
+                          <Text style={styles.qualityEmoji}>{sample?.qualityEmoji || '⭐'}</Text>
+                          <Text style={styles.qualityText}>{label}</Text>
+                        </View>
+                        <Text style={styles.qualityMeta}>
+                          {count} vote{count === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                    );
+                  })}
                 </View>
-              ))}
-            </View>
-
-            <Text style={[styles.subtle, { marginTop: 12 }]}>As an Attendee</Text>
-            <View style={[styles.qualityCard, styles.qualityGreen, { marginTop: 4 }]}>
-              <View style={styles.rowCenter}>
-                <Text style={styles.qualityEmoji}>{mockOrganizerQualities.attendeeQuality.emoji}</Text>
-                <Text style={styles.qualityText}>{mockOrganizerQualities.attendeeQuality.quality}</Text>
-              </View>
-              <Text style={styles.qualityMeta}>{mockOrganizerQualities.attendeeQuality.count} votes</Text>
-            </View>
+              </>
+            )}
           </View>
         </View>
 
