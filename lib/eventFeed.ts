@@ -2,6 +2,7 @@ import { dataService } from '../Backend/firebase';
 import { mockEvents } from './events';
 import { USE_MOCK_EVENTS } from './config';
 import { byStartAscending, isUpcoming } from './eventTime';
+import { withTimeout } from './async';
 import type { Event } from './types';
 
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -71,35 +72,6 @@ export const upsertCachedEvent = (event: Event, options?: { maxItems?: number })
   cachedAt = Date.now();
 };
 
-/**
- * The Firestore SDK retries a failed read indefinitely rather than rejecting,
- * so a project-level outage would otherwise leave every screen on a spinner
- * forever. Racing against a timeout turns that into a surfaceable error.
- */
-const FETCH_TIMEOUT_MS = 12 * 1000;
-
-class FeedTimeoutError extends Error {
-  constructor() {
-    super('Timed out while loading events');
-    this.name = 'FeedTimeoutError';
-  }
-}
-
-const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new FeedTimeoutError()), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-
 /** Set when the last fetch failed, so screens can show a retry instead of an empty feed. */
 let lastError: Error | null = null;
 
@@ -118,10 +90,7 @@ export async function preloadEventFeed(
   }
 
   try {
-    const fetchedEvents = (await withTimeout(
-      dataService.getEvents({ limit }),
-      FETCH_TIMEOUT_MS
-    )) as Event[];
+    const fetchedEvents = (await withTimeout(dataService.getEvents({ limit }))) as Event[];
     const normalized = fetchedEvents.map(normalizeEvent);
     const combined = prepareFeed(mergeWithMockEvents(normalized, maxItems), maxItems);
     cachedEvents = combined;

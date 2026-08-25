@@ -34,6 +34,7 @@ import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mockEvents } from '../lib/events';
 import { USE_MOCK_EVENTS } from '../lib/config';
+import { withTimeout } from '../lib/async';
 import {
   getEventStart,
   hasEventEnded,
@@ -429,9 +430,14 @@ export const dataService = {
   },
 
   async getEvent(eventId: string) {
-    const eventDoc = await getDoc(doc(db, 'events', eventId));
-    if (eventDoc.exists()) {
-      return { id: eventDoc.id, ...eventDoc.data() };
+    try {
+      const eventDoc = await withTimeout(getDoc(doc(db, 'events', eventId)));
+      if (eventDoc.exists()) {
+        return { id: eventDoc.id, ...eventDoc.data() };
+      }
+    } catch (error) {
+      // An unreachable database must not hang the detail screen forever.
+      console.warn(`Could not read event ${eventId}:`, error);
     }
 
     return getMockEventById(eventId);

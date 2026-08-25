@@ -262,11 +262,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     borderRadius: 12,
     paddingVertical: 15,
+    // Horizontal padding matters for the narrow empty-state variant, where the
+    // button sizes to its label instead of filling the content column.
+    paddingHorizontal: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   payButtonDisabled: { opacity: 0.6 },
-  payButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  payButtonText: { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center' },
 
   finePrint: { fontSize: 11, color: '#9ca3af', textAlign: 'center', lineHeight: 16 },
 });
