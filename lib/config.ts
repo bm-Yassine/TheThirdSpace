@@ -7,6 +7,14 @@
  */
 export const USE_MOCK_EVENTS = process.env.EXPO_PUBLIC_USE_MOCK_EVENTS === 'true';
 
+/**
+ * Demo mode: runs the app against a seeded in-memory store with a signed-in
+ * demo user and no Firebase. Lets someone click through every screen — profile,
+ * approvals, chat, ratings — without creating an account, which is what a
+ * portfolio visitor should be able to do.
+ */
+export const DEMO_MODE = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
+
 /** Stripe publishable key; when absent the payment screen runs in demo mode. */
 export const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 

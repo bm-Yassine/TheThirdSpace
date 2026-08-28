@@ -33,7 +33,8 @@ import {
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mockEvents } from '../lib/events';
-import { USE_MOCK_EVENTS } from '../lib/config';
+import { USE_MOCK_EVENTS, DEMO_MODE } from '../lib/config';
+import { demoService } from '../lib/demoService';
 import { withTimeout } from '../lib/async';
 import {
   getEventStart,
@@ -235,7 +236,7 @@ const getMockEventById = (eventId: string) => {
 };
 
 // Firestore data functions
-export const dataService = {
+const firestoreDataService = {
   // User Profile functions
   async createUserProfile(uid: string, profileData: Partial<UserProfile>) {
     const userRef = doc(db, 'users', uid);
@@ -1241,3 +1242,14 @@ export const dataService = {
     return paymentRef.id;
   },
 };
+
+/**
+ * The data layer screens talk to.
+ *
+ * In demo mode this is an in-memory implementation with a seeded user, so the
+ * whole app is explorable without an account or a live database. Everywhere
+ * else it is the Firestore-backed service above.
+ */
+export const dataService: typeof firestoreDataService = DEMO_MODE
+  ? ({ ...firestoreDataService, ...demoService } as unknown as typeof firestoreDataService)
+  : firestoreDataService;

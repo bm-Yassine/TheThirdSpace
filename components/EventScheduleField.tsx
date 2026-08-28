@@ -58,6 +58,21 @@ export default function EventScheduleField({
   onChange: (next: EventSchedule) => void;
 }) {
   const timeScrollRef = useRef<ScrollView>(null);
+  // The default start time is the next quarter hour, which sits far down a
+  // 96-slot list. Without scrolling to it the picker opens on 12:00 AM and the
+  // user has to hunt for the time that is already selected.
+  const hasScrolledToSelection = useRef(false);
+
+  /**
+   * Scrolls the selected chip into view as soon as it reports its position.
+   * Chip widths vary with the locale's time format, so the offset has to come
+   * from layout rather than being calculated from a fixed width.
+   */
+  const onTimeChipLayout = (slot: string, x: number) => {
+    if (hasScrolledToSelection.current || slot !== value.time) return;
+    hasScrolledToSelection.current = true;
+    timeScrollRef.current?.scrollTo({ x: Math.max(x - 24, 0), animated: false });
+  };
 
   const days = useMemo(() => {
     const today = new Date();
@@ -141,6 +156,7 @@ export default function EventScheduleField({
               <Pressable
                 key={slot}
                 onPress={() => onChange({ ...value, time: slot })}
+                onLayout={(event) => onTimeChipLayout(slot, event.nativeEvent.layout.x)}
                 style={[styles.timeChip, selected && styles.chipSelected]}
               >
                 <Text style={[styles.timeText, selected && styles.chipTextSelected]}>

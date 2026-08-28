@@ -464,7 +464,7 @@ function buildBanner({
       Icon: Settings,
       title: 'You are the organizer',
       desc: pending
-        ? `${pending} person${pending === 1 ? '' : 's'} waiting for your approval.`
+        ? `${pending} ${pending === 1 ? 'person is' : 'people are'} waiting for your approval.`
         : 'Manage attendees, approvals and the waitlist from here.',
       style: styles.bannerIndigo,
     };

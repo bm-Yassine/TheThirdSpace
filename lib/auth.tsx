@@ -8,6 +8,8 @@ import React, {
 } from 'react';
 import type { User } from 'firebase/auth';
 import { authService, dataService, type UserProfile } from '../Backend/firebase';
+import { DEMO_MODE } from './config';
+import { DEMO_UID, demoState } from './demoData';
 
 type AuthState = {
   /** Firebase auth user, or null when signed out. */
@@ -37,6 +39,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loadingProfile, setLoadingProfile] = useState(false);
 
   useEffect(() => {
+    if (DEMO_MODE) {
+      // Signed in as the demo user, with no Firebase round trip.
+      setUser({ uid: DEMO_UID, email: demoState.profile.email, displayName: demoState.profile.displayName } as User);
+      setProfile(demoState.profile);
+      setInitializing(false);
+      return;
+    }
+
     const unsubscribe = authService.onAuthStateChange(async (nextUser) => {
       setUser(nextUser);
       setInitializing(false);
@@ -63,6 +73,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async () => {
+    if (DEMO_MODE) {
+      setProfile(demoState.profile);
+      return demoState.profile;
+    }
+
     const current = authService.getCurrentUser();
     if (!current) {
       setProfile(null);
@@ -82,10 +97,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const patchProfile = useCallback((updates: Partial<UserProfile>) => {
+    if (DEMO_MODE) Object.assign(demoState.profile, updates);
     setProfile((prev) => (prev ? { ...prev, ...updates } : prev));
   }, []);
 
   const signOut = useCallback(async () => {
+    if (DEMO_MODE) return;
     await authService.signOut();
     setProfile(null);
   }, []);
