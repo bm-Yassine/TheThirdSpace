@@ -189,3 +189,31 @@ describe('formatEventDateLabel', () => {
     assert.equal(formatEventDateLabel({ startsAt: late.toISOString() }, now), 'Today');
   });
 });
+
+describe('map centring (median vs mean)', () => {
+  // Mirrors the centring logic in components/home/MapView.tsx. A mean centroid
+  // across two distant cities lands in the ocean between them; the median lands
+  // inside the dominant cluster.
+  const median = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[middle - 1] + sorted[middle]) / 2
+      : sorted[middle];
+  };
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+
+  it('median stays in the dominant cluster when the mean would not', () => {
+    // Seven events around New York, two in London.
+    const longitudes = [-74.0, -73.99, -73.98, -73.97, -73.96, -73.95, -73.94, -0.07, -0.09];
+
+    assert.ok(median(longitudes) < -70, `median ${median(longitudes)} should be near New York`);
+    // The mean is dragged most of the way across the Atlantic.
+    assert.ok(mean(longitudes) > -60, `mean ${mean(longitudes)} drifts off the cluster`);
+  });
+
+  it('median equals mean for a single tight cluster', () => {
+    const longitudes = [-73.98, -73.99, -74.0];
+    assert.equal(median(longitudes).toFixed(2), mean(longitudes).toFixed(2));
+  });
+});

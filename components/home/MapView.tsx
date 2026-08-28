@@ -69,19 +69,28 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
     [locatedEvents, selectedId]
   );
 
-  // Centre on the average of all pins so the first paint frames the whole set.
+  /**
+   * Centre on the median coordinate rather than the mean.
+   *
+   * A mean centroid is pulled apart by outliers: a handful of events in one
+   * city and one in another puts the centre in the ocean between them, showing
+   * empty water and no pins. The median always lands inside the densest
+   * cluster, which is where the user's events almost always are.
+   */
   const center = useMemo(() => {
     if (locatedEvents.length === 0) return DEFAULT_CENTER;
-    const total = locatedEvents.reduce(
-      (acc, event) => ({
-        latitude: acc.latitude + (event.latitude as number),
-        longitude: acc.longitude + (event.longitude as number),
-      }),
-      { latitude: 0, longitude: 0 }
-    );
+
+    const median = (values: number[]) => {
+      const sorted = [...values].sort((a, b) => a - b);
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[middle - 1] + sorted[middle]) / 2
+        : sorted[middle];
+    };
+
     return {
-      latitude: total.latitude / locatedEvents.length,
-      longitude: total.longitude / locatedEvents.length,
+      latitude: median(locatedEvents.map((event) => event.latitude as number)),
+      longitude: median(locatedEvents.map((event) => event.longitude as number)),
     };
   }, [locatedEvents]);
 
