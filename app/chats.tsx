@@ -20,6 +20,7 @@ import {
   type ConversationSummary,
 } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
+import Avatar from '../components/Avatar';
 
 const toDate = (value: any): Date | null => {
   if (!value) return null;
@@ -161,9 +162,12 @@ export default function ChatsScreen() {
   const renderConversation = ({ item }: { item: ConversationSummary }) => (
     <TouchableOpacity style={styles.chatItem} onPress={() => openConversation(item.id)}>
       <View style={styles.avatarContainer}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{item.otherUserName?.charAt(0) || 'U'}</Text>
-        </View>
+        <Avatar
+          uid={item.otherUserId}
+          name={item.otherUserName}
+          photoURL={item.otherUserPhotoURL}
+          size={52}
+        />
       </View>
 
       <View style={styles.chatContent}>

@@ -21,6 +21,7 @@ import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
 import Avatar from '../Avatar';
+import { Clock, MapPin, Users, Heart, Check } from 'lucide-react-native';
 import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -491,19 +492,19 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                 {/* Event Details */}
                 <View style={styles.detailsCard}>
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailIcon}>🕐</Text>
+                    <Clock size={15} color="rgba(255,255,255,0.82)" />
                     <Text style={styles.detailText}>
                       {formatEventDateLabel(event)} • {formatEventTimeRange(event)}
                     </Text>
                   </View>
 
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailIcon}>📍</Text>
+                    <MapPin size={15} color="rgba(255,255,255,0.82)" />
                     <Text style={styles.detailText}>{event.location}</Text>
                   </View>
 
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailIcon}>👥</Text>
+                    <Users size={15} color="rgba(255,255,255,0.82)" />
                     <Text style={styles.detailText}>
                       {event.attendees}/{event.maxAttendees} people
                     </Text>
@@ -528,7 +529,11 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                     style={[styles.favoriteButton, !isLoggedIn && styles.buttonDisabled]}
                     onPress={() => handleFavorite(event.id)}
                   >
-                    <Text style={styles.buttonIcon}>❤️</Text>
+                    <Heart
+                      size={17}
+                      color="#ffffff"
+                      fill={favoriteIds.has(event.id.toString()) ? '#ffffff' : 'none'}
+                    />
                     <Text style={styles.buttonText}>
                       {favoriteIds.has(event.id.toString()) ? 'Favorited' : 'Favorite'}
                     </Text>
@@ -538,7 +543,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                     style={[styles.joinButton, !isLoggedIn && styles.buttonDisabled]}
                     onPress={() => handleJoinEvent(event.id)}
                   >
-                    <Text style={styles.buttonIcon}>✓</Text>
+                    <Check size={17} color="#ffffff" />
                     <Text style={styles.buttonText}>
                       {!isLoggedIn
                         ? 'Sign In to Join'
@@ -977,13 +982,8 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 9,
     marginBottom: 8,
-  },
-  detailIcon: {
-    fontSize: 16,
-    marginRight: 8,
-    width: 20,
-    textAlign: 'center',
   },
   detailText: {
     fontSize: 14,
@@ -1021,7 +1021,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    // Favourite is a secondary action, so it reads as glass over the photo
+    // rather than competing with Join.
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.38)',
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
@@ -1031,7 +1035,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+    // Brand indigo, the same primary action colour used on every other screen.
+    backgroundColor: 'rgba(79, 70, 229, 0.94)',
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
