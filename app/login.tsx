@@ -6,6 +6,9 @@ import {
 import { router } from 'expo-router';
 import { authService, dataService } from '../Backend/firebase';
 
+/** Google OAuth needs real iOS/Android/web client IDs before this is shown. */
+const GOOGLE_SIGN_IN_READY = false;
+
 export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -87,7 +90,11 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
       <View style={styles.background}>
         <View style={styles.logoContainer}>
           <View style={styles.logo}>
-            <Image source={require('../assets/logo.png')} style={styles.logoImage} resizeMode="contain" />
+            <Image
+              source={require('../assets/images/logo-mark-light.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
           <Text style={styles.appName}>The Third Space</Text>
           <Text style={styles.tagline}>Discover Amazing Events</Text>
@@ -99,26 +106,29 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
             {mode === 'login' ? 'Sign in to discover events near you' : 'Create your account and start exploring'}
           </Text>
 
-          {/* Google Sign In Button */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-          >
-            <Image
-              source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
-              style={styles.googleIcon}
-            />
-            <Text style={styles.googleButtonText}>Continue with Google (Soon)</Text>
-          </TouchableOpacity>
-          <Text style={styles.comingSoonText}>
-            Google login is temporarily unavailable while verification is in progress.
-          </Text>
+          {/*
+            Google sign-in is hidden until real OAuth client IDs exist. A
+            prominent, permanently disabled "(Soon)" button is the first thing a
+            new user sees, and a dead primary action reads as a broken app.
+            Flip GOOGLE_SIGN_IN_READY once the client IDs are configured.
+          */}
+          {GOOGLE_SIGN_IN_READY && (
+            <>
+              <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn}>
+                <Image
+                  source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                  style={styles.googleIcon}
+                />
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            </>
+          )}
 
           <View style={styles.form}>
             {mode === 'signup' && (
@@ -232,7 +242,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
