@@ -14,11 +14,14 @@ import { dataService } from '../Backend/firebase';
 import { formatEventDate, formatEventTime, byStartAscending, byStartDescending, hasEventEnded } from '../lib/eventTime';
 import type { Rating, ReputationSummary } from '../lib/types';
 import { useAuth } from '../lib/auth';
+import Avatar from '../components/Avatar';
+import QualityBadge from '../components/QualityBadge';
 
 type Organizer = {
   uid?: string;
   name: string;
   avatar?: string;
+  photoURL?: string | null;
   email?: string;
   bio?: string;
   stats?: {
@@ -45,7 +48,6 @@ export default function OrganizerInfoScreen() {
   const [organizer, setOrganizer] = useState<Organizer>({
     uid: organizerUid || undefined,
     name: organizerName || 'Unknown Organizer',
-    avatar: '👤',
   });
   const [upcomingActivities, setUpcomingActivities] = useState<ActivityStub[]>([]);
   const [pastActivities, setPastActivities] = useState<ActivityStub[]>([]);
@@ -74,7 +76,7 @@ export default function OrganizerInfoScreen() {
         setOrganizer({
           uid: profile.uid,
           name: profile.displayName || 'Unknown Organizer',
-          avatar: profile.photoURL ? '👤' : '👤',
+          photoURL: profile.photoURL,
           email: profile.email,
           bio: profile.bio || 'Hi! I\'m an event organizer passionate about bringing people together for amazing experiences.',
           stats: profile.stats,
@@ -153,9 +155,12 @@ export default function OrganizerInfoScreen() {
         {/* Organizer info */}
         <View style={styles.section}>
           <View style={styles.rowCenter}>
-            <View style={styles.avatar}>
-              <Text style={{ fontSize: 26 }}>{organizer.avatar || '👤'}</Text>
-            </View>
+            <Avatar
+              uid={organizer.uid}
+              name={organizer.name}
+              photoURL={(organizer as any).photoURL}
+              size={62}
+            />
             <View>
               <Text style={styles.h3}>{organizer.name}</Text>
               <Text style={styles.subtle}>Event Organizer</Text>
@@ -205,23 +210,10 @@ export default function OrganizerInfoScreen() {
                   {reputation.ratingCount === 1 ? '' : 's'}
                 </Text>
 
-                <View style={{ gap: 8, marginTop: 8 }}>
-                  {topQualities.map(([label, count]) => {
-                    const sample = ratings.find(
-                      (rating) => (rating.qualityLabel || rating.qualityId) === label
-                    );
-                    return (
-                      <View key={label} style={[styles.qualityCard, styles.qualityBlue]}>
-                        <View style={styles.rowCenter}>
-                          <Text style={styles.qualityEmoji}>{sample?.qualityEmoji || '⭐'}</Text>
-                          <Text style={styles.qualityText}>{label}</Text>
-                        </View>
-                        <Text style={styles.qualityMeta}>
-                          {count} vote{count === 1 ? '' : 's'}
-                        </Text>
-                      </View>
-                    );
-                  })}
+                <View style={styles.qualityWrap}>
+                  {topQualities.map(([label, count]) => (
+                    <QualityBadge key={label} qualityKey={label} count={count} />
+                  ))}
                 </View>
               </>
             )}
@@ -289,6 +281,7 @@ export default function OrganizerInfoScreen() {
 }
 
 const styles = StyleSheet.create({
+  qualityWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   screen: { flex: 1, backgroundColor: '#fff' },
   header: {
     paddingHorizontal: 16, paddingVertical: 12,

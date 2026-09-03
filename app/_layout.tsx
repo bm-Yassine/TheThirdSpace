@@ -48,10 +48,13 @@ export default function RootLayout() {
                 name="legal"
                 options={{ headerShown: false, animation: 'slide_from_right' }}
               />
-              <Stack.Screen name="payment" options={{ presentation: 'modal', title: 'Payment' }} />
+              <Stack.Screen
+                name="payment"
+                options={{ presentation: 'modal', headerShown: false }}
+              />
               <Stack.Screen
                 name="post_event_rating"
-                options={{ presentation: 'modal', title: 'Rate Event' }}
+                options={{ presentation: 'modal', headerShown: false }}
               />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
             </Stack>

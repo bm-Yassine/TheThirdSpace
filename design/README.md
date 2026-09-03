@@ -117,6 +117,26 @@ Ratings are qualitative first — **Super Organized 📋**, **Very Welcoming �
 
 ---
 
+## Identity system
+
+Everyone used to render the same 👤 glyph, and rating qualities were emoji —
+which look different on every platform, cannot be tinted, and read as
+decoration rather than as part of a product.
+
+**Avatars.** A photo when someone uploads one. Otherwise a generated avatar
+derived from their user id: a gradient from a curated palette, their initials,
+and the three-circle mark ghosted behind. It is deterministic, so the same
+person looks the same on every screen and every device, and the mark is what
+makes it feel like *this* app rather than a generic initials bubble.
+
+**Quality icons.** The badges people award each other — Super Organized, Very
+Welcoming, High Energy — are line glyphs in tinted tiles, drawn from the same
+icon family as the rest of the interface. Each quality has one definition
+shared between the screen where you award it and every place it is later
+displayed, so a badge can never drift out of sync with itself.
+
+---
+
 ## Design system
 
 <table>

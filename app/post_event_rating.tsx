@@ -13,30 +13,16 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { dataService } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import { hasEventEnded } from '../lib/eventTime';
-import type { Attendee, RatingQuality } from '../lib/types';
+import type { Attendee } from '../lib/types';
+import { qualitiesFor, type Quality } from '../lib/ratingQualities';
+import Avatar from '../components/Avatar';
 
 type Person = {
   uid: string;
   name: string;
-  avatar?: string;
+  photoURL?: string | null;
   role: 'organizer' | 'attendee';
 };
-
-const organizerQualities: RatingQuality[] = [
-  { id: 'organized', label: 'Super Organized', emoji: '📋', description: 'Everything was perfectly planned' },
-  { id: 'welcoming', label: 'Very Welcoming', emoji: '🤗', description: 'Made everyone feel included' },
-  { id: 'energetic', label: 'High Energy', emoji: '⚡', description: 'Brought amazing energy to the event' },
-  { id: 'communicative', label: 'Great Communicator', emoji: '💬', description: 'Kept everyone in the loop' },
-];
-
-const attendeeQualities: RatingQuality[] = [
-  { id: 'engaged', label: 'Highly Engaged', emoji: '🎯', description: 'Actively participated throughout' },
-  { id: 'respectful', label: 'Very Respectful', emoji: '🙏', description: 'Respectful of others and guidelines' },
-  { id: 'positive', label: 'Positive Energy', emoji: '😊', description: 'Brought great vibes to the group' },
-  { id: 'helpful', label: 'Super Helpful', emoji: '🤝', description: 'Helped others and contributed' },
-  { id: 'punctual', label: 'Always Punctual', emoji: '⏰', description: 'On time and ready to go' },
-  { id: 'enthusiastic', label: 'Very Enthusiastic', emoji: '🌟', description: 'Showed genuine enthusiasm' },
-];
 
 const STAR_VALUES = [1, 2, 3, 4, 5];
 
@@ -51,7 +37,7 @@ export default function PostEventRatingScreen() {
   const [people, setPeople] = useState<Person[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selections, setSelections] = useState<
-    Record<string, { quality: RatingQuality; stars: number }>
+    Record<string, { quality: Quality; stars: number }>
   >({});
   const [isComplete, setIsComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +80,7 @@ export default function PostEventRatingScreen() {
           rateable.map((attendee) => ({
             uid: attendee.uid,
             name: attendee.name,
-            avatar: attendee.avatar || '👤',
+            photoURL: attendee.photoURL,
             role: 'attendee' as const,
           }))
         );
@@ -118,7 +104,7 @@ export default function PostEventRatingScreen() {
         {
           uid: organizerUid,
           name: eventData.organizer?.name || 'Organizer',
-          avatar: eventData.organizer?.avatar || '👤',
+          photoURL: eventData.organizer?.photoURL,
           role: 'organizer',
         },
       ]);
@@ -140,12 +126,12 @@ export default function PostEventRatingScreen() {
   }, [initializing, user, load]);
 
   const currentPerson = people[currentIndex];
-  const options = currentPerson?.role === 'organizer' ? organizerQualities : attendeeQualities;
+  const options = qualitiesFor(currentPerson?.role === 'organizer' ? 'organizer' : 'attendee');
   const currentSelection = currentPerson ? selections[currentPerson.uid] : undefined;
   const isLast = currentIndex === people.length - 1;
   const progressPct = people.length ? ((currentIndex + 1) / people.length) * 100 : 0;
 
-  const setQuality = (quality: RatingQuality) => {
+  const setQuality = (quality: Quality) => {
     if (!currentPerson) return;
     setSelections((prev) => ({
       ...prev,
@@ -271,9 +257,12 @@ export default function PostEventRatingScreen() {
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         <View style={styles.personCard}>
-          <View style={styles.personAvatar}>
-            <Text style={{ fontSize: 30 }}>{currentPerson.avatar || '👤'}</Text>
-          </View>
+          <Avatar
+            uid={currentPerson.uid}
+            name={currentPerson.name}
+            photoURL={currentPerson.photoURL}
+            size={76}
+          />
           <Text style={styles.personName}>{currentPerson.name}</Text>
           <Text style={styles.personRole}>
             {currentPerson.role === 'organizer' ? 'Organized this event' : 'Attended this event'}
@@ -293,7 +282,9 @@ export default function PostEventRatingScreen() {
                 onPress={() => setQuality(option)}
                 style={[styles.qualityCard, selected && styles.qualityCardSelected]}
               >
-                <Text style={styles.qualityEmoji}>{option.emoji}</Text>
+                <View style={[styles.qualityIcon, { backgroundColor: option.tint[0] }]}>
+                  <option.Icon size={19} color={option.tint[1]} />
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.qualityLabel, selected && styles.qualityLabelSelected]}>
                     {option.label}
@@ -388,7 +379,13 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   qualityCardSelected: { borderColor: '#4f46e5', backgroundColor: '#eef2ff' },
-  qualityEmoji: { fontSize: 24 },
+  qualityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   qualityLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
   qualityLabelSelected: { color: '#4338ca' },
   qualityDesc: { fontSize: 12, color: '#6b7280', marginTop: 2 },

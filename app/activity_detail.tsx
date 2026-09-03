@@ -36,6 +36,7 @@ import {
 import { invalidateEventFeedCache } from '../lib/eventFeed';
 import { confirmCheckout } from '../lib/payments';
 import ReportDialog from '../components/ReportDialog';
+import Avatar from '../components/Avatar';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
@@ -356,13 +357,12 @@ export default function ActivityDetailScreen() {
           }
           style={styles.orgRow}
         >
-          {event.organizer?.photoURL ? (
-            <Image source={{ uri: event.organizer.photoURL }} style={styles.orgAvatar} />
-          ) : (
-            <View style={styles.orgAvatar}>
-              <Text style={{ fontSize: 20 }}>{event.organizer?.avatar || '👤'}</Text>
-            </View>
-          )}
+          <Avatar
+            uid={event.createdBy || event.organizer?.uid}
+            name={event.organizer?.name}
+            photoURL={event.organizer?.photoURL}
+            size={48}
+          />
           <View style={{ flex: 1 }}>
             <Text style={styles.orgName}>{event.organizer?.name || 'Unknown Organizer'}</Text>
             <Text style={styles.subtle}>{isOrganizer ? 'You are hosting' : 'Event Organizer'}</Text>

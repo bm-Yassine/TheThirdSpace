@@ -30,6 +30,7 @@ import { formatEventDate, formatEventTime, hasEventEnded } from '../lib/eventTim
 import { invalidateEventFeedCache } from '../lib/eventFeed';
 import type { Attendee } from '../lib/types';
 import { isAwaitingPayment } from '../lib/participation';
+import Avatar from '../components/Avatar';
 
 type SectionKey = 'pending' | 'unpaid' | 'confirmed' | 'waitlisted' | 'declined';
 
@@ -345,13 +346,12 @@ export default function ManageEventScreen() {
               ) : (
                 rows.map((participant, index) => (
                   <View key={participant.uid} style={styles.row}>
-                    {participant.photoURL ? (
-                      <Image source={{ uri: participant.photoURL }} style={styles.rowAvatar} />
-                    ) : (
-                      <View style={styles.rowAvatar}>
-                        <Text style={{ fontSize: 18 }}>{participant.avatar || '👤'}</Text>
-                      </View>
-                    )}
+                    <Avatar
+                      uid={participant.uid}
+                      name={participant.name}
+                      photoURL={participant.photoURL}
+                      size={40}
+                    />
 
                     <View style={{ flex: 1 }}>
                       <Text style={styles.rowName}>{participant.name}</Text>
@@ -396,7 +396,7 @@ export default function ManageEventScreen() {
                               style={[styles.actionBtn, styles.declineBtn]}
                               hitSlop={6}
                             >
-                              <X size={16} color="#fff" />
+                              <X size={16} color="#dc2626" />
                             </Pressable>
                           )}
                           {section.key === 'declined' && (
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   ghostBtn: { padding: 8, borderRadius: 999, backgroundColor: '#f3f4f6' },
   actionBtn: { padding: 8, borderRadius: 999 },
   approveBtn: { backgroundColor: '#16a34a' },
-  declineBtn: { backgroundColor: '#dc2626' },
+  declineBtn: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' },
 
   primaryBtn: {
     flexDirection: 'row',

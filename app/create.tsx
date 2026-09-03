@@ -440,7 +440,6 @@ export default function CreateEventScreen() {
             currentUser.displayName ||
             currentUser.email ||
             'User',
-          avatar: '👤',
           photoURL: userProfile.photoURL,
         },
         imageUrl:

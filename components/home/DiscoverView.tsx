@@ -20,6 +20,7 @@ import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime'
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
+import Avatar from '../Avatar';
 import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -464,9 +465,13 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                   onPress={() => handleOrganizerClick(event.organizer.name, event.organizer.uid)}
                   style={styles.organizerContainer}
                 >
-                  <View style={styles.organizerAvatar}>
-                    <Text style={styles.organizerAvatarText}>{event.organizer.avatar}</Text>
-                  </View>
+                  <Avatar
+                    uid={(event as any).createdBy || event.organizer?.uid}
+                    name={event.organizer?.name}
+                    photoURL={event.organizer?.photoURL}
+                    size={44}
+                    ring
+                  />
                   <View style={styles.organizerTextContainer}>
                     <Text style={styles.organizerName}>{event.organizer.name}</Text>
                     <Text style={styles.organizerLabel}>Organizer</Text>

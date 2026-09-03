@@ -14,6 +14,8 @@ import { Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadProfilePhoto } from '../lib/storage';
 import DeleteAccountDialog from '../components/DeleteAccountDialog';
+import Avatar from '../components/Avatar';
+import QualityBadge from '../components/QualityBadge';
 import { authService } from '../Backend/firebase';
 import { DEMO_MODE } from '../lib/config';
 import { router, useFocusEffect } from 'expo-router';
@@ -325,13 +327,12 @@ export default function ProfileScreen() {
           <>
             <View style={styles.userRow}>
               <Pressable onPress={onChangePhoto} style={styles.avatarWrap} disabled={uploadingPhoto}>
-                {profile?.photoURL ? (
-                  <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
-                ) : (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>👤</Text>
-                  </View>
-                )}
+                <Avatar
+                  uid={user?.uid}
+                  name={profile?.displayName}
+                  photoURL={profile?.photoURL}
+                  size={62}
+                />
                 <View style={styles.avatarBadge}>
                   {uploadingPhoto ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -448,12 +449,8 @@ export default function ProfileScreen() {
               <View style={styles.card}>
                 <Text style={styles.fieldLabel}>What people say about you</Text>
                 <View style={styles.tagsWrap}>
-                  {topQualities.map(([qualityId, count]) => (
-                    <View key={qualityId} style={styles.qualityBadge}>
-                      <Text style={styles.qualityBadgeText}>
-                        {qualityId} ×{count}
-                      </Text>
-                    </View>
+                  {topQualities.map(([qualityKey, count]) => (
+                    <QualityBadge key={qualityKey} qualityKey={qualityKey} count={count} />
                   ))}
                 </View>
                 <Text style={styles.helper}>
