@@ -155,7 +155,7 @@ export default function FavoritesScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#6366f1" />
         <Text style={{ marginTop: 16, color: '#666' }}>Loading favorites...</Text>
       </View>
     );
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
   header: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: '#e5e7eb',
     alignItems: 'center',
   },
   headerTitle: {
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   tag: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#f3f4f6',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   free: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#4caf50',
   },
   emptyState: {
     flex: 1,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   exploreButton: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#6366f1',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,

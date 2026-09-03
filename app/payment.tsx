@@ -94,7 +94,7 @@ export default function PaymentScreen() {
   if (initializing || loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
   }

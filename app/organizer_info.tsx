@@ -136,7 +136,7 @@ export default function OrganizerInfoScreen() {
   if (loading) {
     return (
       <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
   }

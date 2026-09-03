@@ -21,7 +21,7 @@ export default function QualityBadge({
 }) {
   const quality = findQuality(qualityKey);
   const Icon = quality?.Icon ?? Award;
-  const [background, foreground] = quality?.tint ?? ['#F3F4F6', '#4B5563'];
+  const [background, foreground] = quality?.tint ?? ['#f3f4f6', '#4b5563'];
   const label = quality?.label ?? qualityKey;
 
   const compact = size === 'sm';

@@ -237,7 +237,7 @@ export default function ActivityDetailScreen() {
   if (initializing || loading || settlingPayment) {
     return (
       <View style={[styles.screen, styles.centered]}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
   }

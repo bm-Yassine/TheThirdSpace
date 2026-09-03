@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f3f4f6',
   },
   loadingText: {
     color: '#000',
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f3f4f6',
   },
   mapPlaceholderText: {
     fontSize: 64,

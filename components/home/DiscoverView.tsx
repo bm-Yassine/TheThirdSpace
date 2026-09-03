@@ -76,14 +76,14 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   });
 
   const controlTone: 'light' | 'dark' = currentIndex % 2 === 0 ? 'light' : 'dark';
-  const controlStrokeColor = controlTone === 'light' ? '#FFFFFF' : '#111827';
+  const controlStrokeColor = controlTone === 'light' ? '#ffffff' : '#111827';
   const controlContainerColor =
     controlTone === 'light' ? 'rgba(0, 0, 0, 0.36)' : 'rgba(255, 255, 255, 0.58)';
   const controlBorderColor =
     controlTone === 'light' ? 'rgba(255, 255, 255, 0.22)' : 'rgba(17, 24, 39, 0.22)';
   const controlActiveColor =
     controlTone === 'light' ? 'rgba(255, 255, 255, 0.28)' : 'rgba(17, 24, 39, 0.18)';
-  const audioControlColor = '#FFFFFF';
+  const audioControlColor = '#ffffff';
   const audioControlBorderColor = 'rgba(255, 255, 255, 0.42)';
 
   // Favorites and commitments follow the auth provider, which only reports a
@@ -712,7 +712,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         <View style={styles.animationContainer}>
           {[...Array(30)].map((_, i) => {
             const randomX = Math.random() * SCREEN_WIDTH;
-            const randomColor = ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8'][Math.floor(Math.random() * 6)];
+            const randomColor = ['#ffd700', '#ff6b6b', '#4ecdc4', '#45b7d1', '#ffa07a', '#98d8c8'][Math.floor(Math.random() * 6)];
             
             return (
               <Animated.View
@@ -993,7 +993,7 @@ const styles = StyleSheet.create({
   costText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4CAF50',
+    color: '#4caf50',
   },
   tagsContainer: {
     flexDirection: 'row',
@@ -1176,7 +1176,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.6)',
   },
   mapPinInnerActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#ffffff',
   },
   iconActive: {
     borderColor: '#fff',

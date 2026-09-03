@@ -241,7 +241,7 @@ export default function ProfileScreen() {
   if (initializing || loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
   }
@@ -632,7 +632,7 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 16,
     paddingBottom: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e5e7eb',

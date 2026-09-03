@@ -99,7 +99,7 @@ export default function FloatingNavigation({ activeScreen, tone = 'dark' }: Floa
     { id: 'profile', size: 50 },
   ];
 
-  const iconColor = tone === 'light' ? '#FFFFFF' : '#111827';
+  const iconColor = tone === 'light' ? '#ffffff' : '#111827';
   const buttonColor = tone === 'light' ? 'rgba(255, 255, 255, 0.16)' : 'rgba(17, 24, 39, 0.08)';
   const buttonBorderColor = tone === 'light' ? 'rgba(255, 255, 255, 0.28)' : 'rgba(17, 24, 39, 0.24)';
   const activeButtonColor = tone === 'light' ? 'rgba(255, 255, 255, 0.3)' : 'rgba(17, 24, 39, 0.18)';
@@ -226,7 +226,7 @@ export default function FloatingNavigation({ activeScreen, tone = 'dark' }: Floa
             activeScreen === button.id && {
               backgroundColor: activeButtonColor,
               borderColor: activeBorderColor,
-              shadowColor: tone === 'light' ? '#FFFFFF' : '#111827',
+              shadowColor: tone === 'light' ? '#ffffff' : '#111827',
               shadowOpacity: 0.35,
             },
           ]}

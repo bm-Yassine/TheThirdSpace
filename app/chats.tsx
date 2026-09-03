@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   header: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: '#e5e7eb',
   },
   headerRow: {
     flexDirection: 'row',
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 14,
-    color: '#2563EB',
+    color: '#2563eb',
     width: 40,
   },
   headerTitle: {
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f3f4f6',
   },
   avatarContainer: {
     position: 'relative',
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   messageTheirs: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#f3f4f6',
   },
   messageText: {
     fontSize: 14,
@@ -381,12 +381,12 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     fontSize: 10,
-    color: '#6B7280',
+    color: '#6b7280',
     marginTop: 4,
     alignSelf: 'flex-end',
   },
   messageTimeMine: {
-    color: '#D1D5DB',
+    color: '#d1d5db',
   },
   inputBar: {
     position: 'absolute',
@@ -398,13 +398,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
+    borderTopColor: '#e5e7eb',
     backgroundColor: '#fff',
   },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#d1d5db',
     borderRadius: 18,
     paddingHorizontal: 12,
     paddingVertical: 8,

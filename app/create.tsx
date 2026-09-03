@@ -496,7 +496,7 @@ export default function CreateEventScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#6366f1" />
       </View>
     );
   }
@@ -812,7 +812,7 @@ export default function CreateEventScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#f3f4f6',
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
   },
   header: {
@@ -821,8 +821,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
   },
   headerButton: {
     fontSize: 16,
@@ -896,12 +896,12 @@ const styles = StyleSheet.create({
   trackName: { flex: 1, fontSize: 13, color: '#3730a3', fontWeight: '600' },
   trackRemove: { fontSize: 12, color: '#4f46e5', fontWeight: '700' },
   formCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#ffffff',
     borderRadius: 14,
     padding: 14,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#e5e7eb',
   },
   label: {
     fontSize: 15,
@@ -911,11 +911,11 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#d1d5db',
     borderRadius: 8,
     padding: 12,
     fontSize: 15,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#f9fafb',
   },
   inputSpacing: {
     marginTop: 10,
@@ -996,7 +996,7 @@ const styles = StyleSheet.create({
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#e5e7eb',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -1007,7 +1007,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   tagRemove: {
-    color: '#6B7280',
+    color: '#6b7280',
     fontSize: 14,
     marginLeft: 4,
   },
@@ -1033,7 +1033,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 10,
     overflow: 'hidden',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#e5e7eb',
   },
   mediaPreviewImage: {
     width: '100%',
@@ -1078,7 +1078,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#d1d5db',
     backgroundColor: '#fff',
   },
   typeButtonSelected: {
@@ -1087,7 +1087,7 @@ const styles = StyleSheet.create({
   },
   typeText: {
     fontSize: 14,
-    color: '#4B5563',
+    color: '#4b5563',
   },
   typeTextSelected: {
     color: '#fff',
