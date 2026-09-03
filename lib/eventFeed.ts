@@ -49,6 +49,10 @@ const mergeWithMockEvents = (dbEvents: Event[], maxItems: number) => {
 const prepareFeed = (events: Event[], maxItems: number) =>
   events
     .filter((event) => (event as any).status !== 'cancelled')
+    .filter((event) => {
+      const organizerUid = (event as any).createdBy || event.organizer?.uid;
+      return !organizerUid || !blockedUserIds.has(organizerUid);
+    })
     .filter((event) => isUpcoming(event))
     .sort(byStartAscending)
     .slice(0, maxItems);
@@ -70,6 +74,18 @@ export const upsertCachedEvent = (event: Event, options?: { maxItems?: number })
 
   cachedEvents = [normalizedEvent, ...withoutCurrent].sort(byStartAscending).slice(0, maxItems);
   cachedAt = Date.now();
+};
+
+/**
+ * Users the viewer has blocked. Held here so the feed can filter them out
+ * without every screen re-fetching the block list.
+ */
+let blockedUserIds = new Set<string>();
+
+export const setBlockedUserIds = (ids: string[]) => {
+  blockedUserIds = new Set(ids);
+  // The cached feed was built before the block, so it has to be rebuilt.
+  invalidateEventFeedCache();
 };
 
 /** Set when the last fetch failed, so screens can show a retry instead of an empty feed. */

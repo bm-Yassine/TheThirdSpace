@@ -56,6 +56,12 @@ service cloud.firestore {
         allow read, write: if isUser(userId);
       }
 
+      // Who this user has blocked. Private to them — a blocked person must not
+      // be able to discover that they were blocked.
+      match /blocked/{blockedId} {
+        allow read, write: if isUser(userId);
+      }
+
       // The user's mirror of their participation. The owner manages it, and
       // the organizer of the event may update its status to record an
       // approval, decline or waitlist promotion.
@@ -105,8 +111,12 @@ service cloud.firestore {
         // organizer may update anyone's row to approve or decline them.
         allow update: if isUser(participantId) || isEventOrganizer(eventId);
 
-        // You may withdraw yourself; the organizer may remove anyone.
-        allow delete: if isUser(participantId) || isEventOrganizer(eventId);
+        // You may withdraw yourself; the organizer may remove anyone. The
+        // organizer check tolerates the event already being gone, which happens
+        // while an account is being deleted.
+        allow delete: if isUser(participantId)
+                      || !exists(/databases/$(database)/documents/events/$(eventId))
+                      || isEventOrganizer(eventId);
       }
     }
 
@@ -137,8 +147,10 @@ service cloud.firestore {
                       && request.auth.uid in conversation().participantIds
                       && request.resource.data.senderId == request.auth.uid;
 
-        // Messages are immutable once sent.
-        allow update, delete: if false;
+        // Messages are immutable once sent. The exception is erasure: a user
+        // deleting their account may remove their own messages.
+        allow update: if false;
+        allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
       }
     }
 
@@ -156,7 +168,26 @@ service cloud.firestore {
                                            + request.auth.uid + '_'
                                            + request.resource.data.rateeUid;
 
-      allow delete: if isSignedIn() && resource.data.raterUid == request.auth.uid;
+      // The rater may withdraw a rating; the person rated may erase one that
+      // identifies them, which account deletion depends on.
+      allow delete: if isSignedIn()
+                    && (resource.data.raterUid == request.auth.uid
+                        || resource.data.rateeUid == request.auth.uid);
+    }
+
+    // -------------------------------------------------------------- reports
+    // Write-only from the client. A reporter can file a report, but nobody can
+    // read them back through the app, so a reported user cannot find out who
+    // reported them. Moderation happens in the Firebase console or via the
+    // Admin SDK, both of which bypass these rules.
+    match /reports/{reportId} {
+      allow read: if false;
+      allow create: if isSignedIn()
+                    && request.resource.data.reporterUid == request.auth.uid
+                    && request.resource.data.targetId != request.auth.uid
+                    && request.resource.data.reason is string
+                    && request.resource.data.reason.size() > 0;
+      allow update, delete: if false;
     }
 
     // ------------------------------------------------------------- payments

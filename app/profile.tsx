@@ -13,6 +13,8 @@ import { LogOut, ChevronRight, Star, Calendar, History, Settings, Camera } from 
 import { Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadProfilePhoto } from '../lib/storage';
+import DeleteAccountDialog from '../components/DeleteAccountDialog';
+import { authService } from '../Backend/firebase';
 import { DEMO_MODE } from '../lib/config';
 import { router, useFocusEffect } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
@@ -57,6 +59,8 @@ export default function ProfileScreen() {
   const [editBio, setEditBio] = useState('');
   const [editInterests, setEditInterests] = useState('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   const loadProfileData = useCallback(async () => {
     if (!user) return;
@@ -268,6 +272,32 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110 }}>
+        {!DEMO_MODE && user && !user.emailVerified && (
+          <View style={styles.verifyBanner}>
+            <Text style={styles.verifyTitle}>Confirm your email</Text>
+            <Text style={styles.verifyBody}>
+              {verificationSent
+                ? `We sent a link to ${user.email}. Open it, then reopen the app.`
+                : 'Organizers can see that your email is unconfirmed. It only takes a moment.'}
+            </Text>
+            {!verificationSent && (
+              <Pressable
+                style={styles.verifyBtn}
+                onPress={async () => {
+                  try {
+                    await authService.sendVerificationEmail();
+                    setVerificationSent(true);
+                  } catch {
+                    Alert.alert('Could not send', 'Please try again in a moment.');
+                  }
+                }}
+              >
+                <Text style={styles.verifyBtnText}>Send the link</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
         {awaitingRating.length > 0 && (
           <Pressable
             style={styles.ratingPrompt}
@@ -433,10 +463,27 @@ export default function ProfileScreen() {
               </View>
             )}
 
+            <View style={styles.legalRow}>
+              <Pressable onPress={() => router.push({ pathname: '/legal', params: { tab: 'privacy' } })}>
+                <Text style={styles.legalLink}>Privacy Policy</Text>
+              </Pressable>
+              <Text style={styles.legalDot}>·</Text>
+              <Pressable onPress={() => router.push({ pathname: '/legal', params: { tab: 'terms' } })}>
+                <Text style={styles.legalLink}>Terms of Use</Text>
+              </Pressable>
+            </View>
+
             <Pressable style={styles.logoutBtn} onPress={onLogout}>
               <LogOut size={18} color="#dc2626" />
               <Text style={styles.logoutText}>Log out</Text>
             </Pressable>
+
+            <Pressable style={styles.deleteAccountBtn} onPress={() => setShowDelete(true)}>
+              <Text style={styles.deleteAccountText}>Delete my account</Text>
+            </Pressable>
+            <Text style={styles.deleteAccountHint}>
+              Permanently removes your profile, events, messages and files.
+            </Text>
           </>
         )}
 
@@ -510,6 +557,16 @@ export default function ProfileScreen() {
           </Section>
         )}
       </ScrollView>
+
+      <DeleteAccountDialog
+        visible={showDelete}
+        onClose={() => setShowDelete(false)}
+        onDeleted={() => {
+          setShowDelete(false);
+          Alert.alert('Account deleted', 'Your account and data have been removed.');
+          router.replace('/home');
+        }}
+      />
 
       <FloatingNavigation activeScreen="profile" tone="dark" />
     </View>
@@ -710,6 +767,34 @@ const styles = StyleSheet.create({
   eventMeta: { fontSize: 12, color: '#6b7280', marginTop: 2 },
   eventStatus: { fontSize: 12, color: '#2563eb', marginTop: 5, fontWeight: '700' },
   eventStatusHighlight: { color: '#c2410c' },
+
+  legalRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 14 },
+  legalLink: { fontSize: 12.5, color: '#4f46e5', fontWeight: '600' },
+  legalDot: { fontSize: 12.5, color: '#9ca3af' },
+
+  deleteAccountBtn: { marginTop: 12, paddingVertical: 11, alignItems: 'center' },
+  deleteAccountText: { fontSize: 13, color: '#dc2626', fontWeight: '700' },
+  deleteAccountHint: { fontSize: 11, color: '#9ca3af', textAlign: 'center', marginTop: -4 },
+
+  verifyBanner: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 16,
+  },
+  verifyTitle: { fontSize: 14, fontWeight: '700', color: '#1e40af' },
+  verifyBody: { fontSize: 12.5, color: '#1d4ed8', marginTop: 3, lineHeight: 18 },
+  verifyBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1d4ed8',
+  },
+  verifyBtnText: { fontSize: 12.5, fontWeight: '700', color: '#fff' },
 
   logoutBtn: {
     flexDirection: 'row',

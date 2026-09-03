@@ -2,7 +2,22 @@
 import 'react-native-get-random-values';
 import { Platform } from 'react-native';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, initializeAuth, type Auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, onAuthStateChanged, type User } from 'firebase/auth';
+import {
+  getAuth,
+  initializeAuth,
+  type Auth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  deleteUser,
+  reload,
+  onAuthStateChanged,
+  type User,
+} from 'firebase/auth';
 // 'firebase/auth/react-native' can be missing type declarations in some setups (TS); require dynamically and type as any
 let getReactNativePersistence: any;
 try {
@@ -30,7 +45,7 @@ import {
   type DocumentData,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getStorage, ref as storageRef, listAll, deleteObject } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mockEvents } from '../lib/events';
 import { USE_MOCK_EVENTS, DEMO_MODE } from '../lib/config';
@@ -113,6 +128,14 @@ export const authService = {
       }
     }
 
+    // Fire-and-forget: a failed verification email must not fail signup, and
+    // the profile screen offers a retry.
+    if (userCredential.user && !userCredential.user.emailVerified) {
+      sendEmailVerification(userCredential.user).catch((error) =>
+        console.warn('Verification email could not be sent:', error)
+      );
+    }
+
     return userCredential;
   },
 
@@ -130,7 +153,47 @@ export const authService = {
 
   getCurrentUser() {
     return auth.currentUser;
-  }
+  },
+
+  /**
+   * Sends the verification email. Called on signup and retryable from the
+   * profile banner, since the first one is easy to miss.
+   */
+  async sendVerificationEmail() {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    if (user.emailVerified) return;
+    return sendEmailVerification(user);
+  },
+
+  /** Re-fetches the user so `emailVerified` reflects a link clicked elsewhere. */
+  async refreshUser() {
+    const user = auth.currentUser;
+    if (!user) return null;
+    await reload(user);
+    return auth.currentUser;
+  },
+
+  /**
+   * Confirms the user's password.
+   *
+   * Firebase requires a recent login before destructive account operations, so
+   * deletion has to re-prove identity. The password is passed straight to
+   * Firebase and never stored or logged.
+   */
+  async reauthenticate(password: string) {
+    const user = auth.currentUser;
+    if (!user?.email) throw new Error('User not authenticated');
+    const credential = EmailAuthProvider.credential(user.email, password);
+    return reauthenticateWithCredential(user, credential);
+  },
+
+  /** Deletes the Firebase Auth account. Call only after data has been erased. */
+  async deleteAuthAccount() {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    return deleteUser(user);
+  },
 };
 
 // User Profile type
@@ -1319,6 +1382,172 @@ const firestoreDataService = {
       .map((event) => ({ event, role: 'organizer' as const }));
 
     return [...hosted, ...attended];
+  },
+
+  // ---------------------------------------------------------------------------
+  // Safety: reporting and blocking
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Files a report about an event or a person.
+   *
+   * Reports are write-only from the client: a reporter can create one but
+   * nobody can read them back through the app, so a reported user cannot see
+   * who reported them.
+   */
+  async reportContent(input: {
+    targetType: 'event' | 'user' | 'message';
+    targetId: string;
+    reason: string;
+    details?: string;
+  }) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    if (input.targetId === user.uid) throw new Error('You cannot report yourself');
+
+    const reportRef = doc(collection(db, 'reports'));
+    await setDoc(reportRef, {
+      id: reportRef.id,
+      reporterUid: user.uid,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      reason: input.reason,
+      details: input.details?.trim() || '',
+      status: 'open',
+      createdAt: new Date(),
+    });
+
+    return reportRef.id;
+  },
+
+  /** Blocks a user: they disappear from your feed and cannot message you. */
+  async blockUser(targetUid: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    if (targetUid === user.uid) throw new Error('You cannot block yourself');
+
+    await setDoc(doc(db, 'users', user.uid, 'blocked', targetUid), {
+      uid: targetUid,
+      blockedAt: new Date(),
+    });
+  },
+
+  async unblockUser(targetUid: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    await deleteDoc(doc(db, 'users', user.uid, 'blocked', targetUid));
+  },
+
+  async getBlockedUserIds(): Promise<string[]> {
+    const user = auth.currentUser;
+    if (!user) return [];
+    const snapshot = await getDocs(collection(db, 'users', user.uid, 'blocked'));
+    return snapshot.docs.map((snap) => snap.id);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Account deletion
+  //
+  // GDPR gives a user the right to erasure, so this has to remove their data,
+  // not just their login. Deleting the auth account alone would leave orphaned
+  // documents referencing a uid that no longer resolves to anyone.
+  // ---------------------------------------------------------------------------
+
+  /** Everything about the current user, erased. Irreversible. */
+  async deleteAccountAndData(onStep?: (step: string) => void) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+    const uid = user.uid;
+
+    const step = (label: string) => onStep?.(label);
+
+    // 1. Cancel every event they host so attendees are told, then remove it.
+    step('Cancelling your events');
+    const hosted = (await this.getEvents({ organizerId: uid })) as any[];
+    for (const event of hosted) {
+      try {
+        if (event.status !== 'cancelled' && !hasEventEnded(event)) {
+          await this.cancelEvent(String(event.id), 'The organizer deleted their account');
+        }
+        // Participant rows live under the event, so clear them before the event.
+        const participants = await this.getEventParticipants(String(event.id));
+        await Promise.all(
+          participants.map((participant) =>
+            deleteDoc(doc(db, 'events', String(event.id), 'participants', participant.uid)).catch(
+              () => undefined
+            )
+          )
+        );
+        await deleteDoc(doc(db, 'events', String(event.id)));
+      } catch (error) {
+        console.warn(`Could not fully remove event ${event.id}:`, error);
+      }
+    }
+
+    // 2. Withdraw from events they joined, so counters stay correct.
+    step('Leaving events you joined');
+    const commitments = await this.getUserCommitments().catch(() => []);
+    for (const commitment of commitments) {
+      await this.leaveEvent(String(commitment.eventId)).catch(() => undefined);
+    }
+
+    // 3. Ratings they wrote and ratings about them. Both identify the person.
+    step('Removing ratings');
+    const [written, received] = await Promise.all([
+      getDocs(query(collection(db, 'ratings'), where('raterUid', '==', uid))).catch(() => null),
+      getDocs(query(collection(db, 'ratings'), where('rateeUid', '==', uid))).catch(() => null),
+    ]);
+    await Promise.all(
+      [...(written?.docs || []), ...(received?.docs || [])].map((snap) =>
+        deleteDoc(snap.ref).catch(() => undefined)
+      )
+    );
+
+    // 4. Conversations and their messages.
+    step('Removing your messages');
+    const conversations = await getDocs(
+      query(collection(db, 'conversations'), where('participantIds', 'array-contains', uid))
+    ).catch(() => null);
+
+    for (const conversation of conversations?.docs || []) {
+      try {
+        const messages = await getDocs(
+          collection(db, 'conversations', conversation.id, 'messages')
+        );
+        await Promise.all(messages.docs.map((snap) => deleteDoc(snap.ref).catch(() => undefined)));
+        await deleteDoc(conversation.ref);
+      } catch (error) {
+        console.warn(`Could not remove conversation ${conversation.id}:`, error);
+      }
+    }
+
+    // 5. Uploaded files.
+    step('Deleting uploaded files');
+    for (const prefix of [`avatars/${uid}`, `events/${uid}`, `audio/${uid}`]) {
+      try {
+        const listing = await listAll(storageRef(storage, prefix));
+        await Promise.all(listing.items.map((item) => deleteObject(item).catch(() => undefined)));
+      } catch (error) {
+        console.warn(`Could not clear ${prefix}:`, error);
+      }
+    }
+
+    // 6. The profile document and its sub-collections.
+    step('Removing your profile');
+    for (const sub of ['favorites', 'commitments', 'createdEvents', 'ratedEvents', 'blocked', 'joinedEvents']) {
+      try {
+        const snapshot = await getDocs(collection(db, 'users', uid, sub));
+        await Promise.all(snapshot.docs.map((snap) => deleteDoc(snap.ref).catch(() => undefined)));
+      } catch {
+        // Sub-collection may not exist; nothing to clear.
+      }
+    }
+    await deleteDoc(doc(db, 'users', uid)).catch(() => undefined);
+
+    // 7. Finally the login itself. Needs a recent sign-in, which is why the UI
+    //    asks for the password first.
+    step('Closing your account');
+    await authService.deleteAuthAccount();
   },
 
   async recordPayment(eventId: string, amount: number, method: 'stripe' | 'card' | 'paypal', status: 'pending' | 'completed' = 'completed') {

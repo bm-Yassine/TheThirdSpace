@@ -21,6 +21,7 @@ import {
   Star,
   Clock,
   Ban,
+  Flag,
 } from 'lucide-react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Image } from 'react-native';
@@ -34,6 +35,7 @@ import {
 } from '../lib/eventTime';
 import { invalidateEventFeedCache } from '../lib/eventFeed';
 import { confirmCheckout } from '../lib/payments';
+import ReportDialog from '../components/ReportDialog';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
@@ -49,6 +51,7 @@ export default function ActivityDetailScreen() {
   const [commitment, setCommitment] = useState<UserCommitment | null>(null);
   const [hasRated, setHasRated] = useState(false);
   const [settlingPayment, setSettlingPayment] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   const isLoggedIn = !!user;
 
@@ -432,6 +435,52 @@ export default function ActivityDetailScreen() {
           </View>
         )}
 
+        {!isOrganizer && isLoggedIn && (
+          <View style={styles.safetyRow}>
+            <Pressable
+              onPress={() => setShowReport(true)}
+              style={styles.safetyBtn}
+              hitSlop={6}
+            >
+              <Flag size={13} color="#6b7280" />
+              <Text style={styles.safetyText}>Report</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                const organizerUid = event.createdBy || event.organizer?.uid;
+                if (!organizerUid) return;
+                Alert.alert(
+                  `Block ${event.organizer?.name || 'this organizer'}?`,
+                  'They will no longer be able to message you, and their events will be hidden from your feed.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Block',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await dataService.blockUser(organizerUid);
+                          invalidateEventFeedCache();
+                          Alert.alert('Blocked', 'You will no longer see or hear from them.');
+                          router.replace('/home');
+                        } catch {
+                          Alert.alert('Error', 'Could not block right now.');
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              style={styles.safetyBtn}
+              hitSlop={6}
+            >
+              <Ban size={13} color="#6b7280" />
+              <Text style={styles.safetyText}>Block organizer</Text>
+            </Pressable>
+          </View>
+        )}
+
         <Pressable
           onPress={primaryAction}
           disabled={busy || ((ended || (isCancelled && !commitment)) && !isOrganizer)}
@@ -454,6 +503,13 @@ export default function ActivityDetailScreen() {
           )}
         </Pressable>
       </ScrollView>
+      <ReportDialog
+        visible={showReport}
+        onClose={() => setShowReport(false)}
+        targetType="event"
+        targetId={String(event.id)}
+        targetLabel={event.title}
+      />
     </View>
   );
 }
@@ -642,4 +698,8 @@ const styles = StyleSheet.create({
   btnGray: { backgroundColor: '#9ca3af' },
   btnRed: { backgroundColor: '#dc2626' },
   btnDisabled: { opacity: 0.6 },
+
+  safetyRow: { flexDirection: 'row', justifyContent: 'center', gap: 18, marginBottom: 14 },
+  safetyBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6 },
+  safetyText: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
 });

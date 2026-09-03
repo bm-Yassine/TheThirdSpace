@@ -44,6 +44,10 @@ export default function RootLayout() {
                 name="manage_event"
                 options={{ headerShown: false, animation: 'slide_from_right' }}
               />
+              <Stack.Screen
+                name="legal"
+                options={{ headerShown: false, animation: 'slide_from_right' }}
+              />
               <Stack.Screen name="payment" options={{ presentation: 'modal', title: 'Payment' }} />
               <Stack.Screen
                 name="post_event_rating"

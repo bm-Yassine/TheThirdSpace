@@ -9,6 +9,7 @@ import React, {
 import type { User } from 'firebase/auth';
 import { authService, dataService, type UserProfile } from '../Backend/firebase';
 import { DEMO_MODE } from './config';
+import { setBlockedUserIds } from './eventFeed';
 import { DEMO_UID, demoState } from './demoData';
 
 type AuthState = {
@@ -53,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!nextUser) {
         setProfile(null);
+        setBlockedUserIds([]);
         return;
       }
 
@@ -62,6 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // including accounts created before profiles were written on signup.
         const nextProfile = await dataService.ensureUserProfileFromAuthUser(nextUser);
         setProfile(nextProfile);
+
+        // Load the block list before the feed renders, so a blocked
+        // organizer's events never flash up.
+        const blocked = await dataService.getBlockedUserIds().catch(() => []);
+        setBlockedUserIds(blocked);
       } catch {
         setProfile(null);
       } finally {

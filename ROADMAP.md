@@ -40,51 +40,30 @@ substantially reworked. The design work that preceded the code is in
   appear on the map
 - Real audio playback in Discover
 - Profile photos
-
----
-
-## Before sharing the link publicly
-
-These are not features — they are the things that make it responsible to put
-the app in front of real people, especially launching in France.
-
-### 1. Privacy policy, terms, and account deletion
-Under GDPR a user can demand their data be deleted, and there is currently no
-way to do it. Firebase Auth account deletion also has to cascade: the user
-document, their commitments, favourites, ratings, uploaded media, and their
-half of every conversation.
-
-Needs: a written privacy policy and terms, a link to both at signup, and a
-"Delete my account" flow that actually removes the data.
-
-### 2. Reporting and blocking
-Strangers arrange to meet strangers. There is no way to report an event, an
-organizer or an attendee, and no way to block someone from messaging you.
-This is the minimum safety floor for a social app, not a nice-to-have.
-
-### 3. Email verification
-Any address can sign up, verified or not, so an organizer has no assurance
-that an attendee's contact details are real. `sendEmailVerification` on signup,
-and a gate on creating events until verified.
+- Privacy policy and terms, linked from signup and the profile
+- Account deletion that cascades across events, messages, ratings and files
+- Reporting and blocking, with reports write-only so nobody can see who
+  reported them
+- Email verification on signup, with a retry from the profile
 
 ---
 
 ## Next
 
-### 4. "Near me" on the map
+### 1. "Near me" on the map
 `expo-location` with permission handling, centring the map on the user instead
 of the median of all events. Falls back to the current behaviour when
 permission is denied.
 
-### 5. Share an event link
+### 2. Share an event link
 Deep link per event, native share sheet on mobile and clipboard on web. This is
 how events actually spread, and it's small.
 
-### 6. Attendee list visible to attendees
+### 3. Attendee list visible to attendees
 Only the organizer can see who is coming. "Who else is going" is one of the
 strongest reasons someone commits, and the data is already there.
 
-### 7. Recommendation engine for Discover
+### 4. Recommendation engine for Discover
 Discover's ordering is deliberately left alone by the filter work — filtering
 belongs on Cards. The Discover feed is meant to be **ordered**, not filtered:
 ranked by mood, location, what's happening nearby, what's trending, and the
@@ -96,7 +75,7 @@ This is the most ambitious item and needs deciding before it's built:
 - A cold-start ordering for users with no history
 - How a user sees and corrects why something was surfaced
 
-### 8. Motion and flow pass
+### 5. Motion and flow pass
 The identity is done — the mark, splash and icons ship. What remains is motion.
 
 - Loading and empty states with character rather than a bare spinner
@@ -118,6 +97,16 @@ The identity is done — the mark, splash and icons ship. What remains is motion
 ---
 
 ## Known limitations
+
+- **The privacy policy and terms have not been reviewed by a lawyer.** They
+  describe what the app actually does, which is the part that matters most, but
+  they are a starting point rather than legal advice.
+- **Reports have no moderation queue.** They are written to `reports` and are
+  only readable from the Firebase console or the Admin SDK. Reviewing them is
+  currently a manual job.
+- **Blocking is one-directional in the feed.** A blocked person's events are
+  hidden from the blocker, but the blocked person can still see the blocker's
+  events. Making it symmetric needs a server-side query.
 
 - **Cancellation notifies through chat**, because that's the only channel the app has. Push notifications would make it reliable.
 - **`getEvents` fetches then sorts client-side.** Fine at current scale; it should become a server-side `where(status) orderBy(startsAt)` query, which is what the composite index in `firestore.indexes.json` anticipates.

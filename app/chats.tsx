@@ -56,11 +56,17 @@ export default function ChatsScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const messagesRef = useRef<FlatList<ChatMessage>>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((c) => c.id === selectedConversationId) || null,
     [conversations, selectedConversationId]
+  );
+
+  const visibleConversations = useMemo(
+    () => conversations.filter((c) => !blockedIds.has(c.otherUserId)),
+    [conversations, blockedIds]
   );
 
   // Live conversation list - the inbox reorders itself as messages arrive.
@@ -76,8 +82,14 @@ export default function ChatsScreen() {
       return;
     }
 
+    dataService
+      .getBlockedUserIds()
+      .then((ids) => setBlockedIds(new Set(ids)))
+      .catch(() => undefined);
+
     const unsubscribe = dataService.subscribeToConversations(
       (list) => {
+        // A blocked person's thread disappears from the inbox.
         setConversations(list);
         setLoading(false);
       },
@@ -203,7 +215,7 @@ export default function ChatsScreen() {
 
       {!selectedConversationId ? (
         <FlatList
-          data={conversations}
+          data={visibleConversations}
           renderItem={renderConversation}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}

@@ -130,6 +130,26 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
             </>
           )}
 
+          {mode === 'signup' && (
+            <Text style={styles.consent}>
+              By creating an account you agree to our{' '}
+              <Text
+                style={styles.consentLink}
+                onPress={() => router.push({ pathname: '/legal', params: { tab: 'terms' } })}
+              >
+                Terms of Use
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={styles.consentLink}
+                onPress={() => router.push({ pathname: '/legal', params: { tab: 'privacy' } })}
+              >
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+          )}
+
           <View style={styles.form}>
             {mode === 'signup' && (
               <View style={styles.inputContainer}>
@@ -290,6 +310,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
   },
+  consent: {
+    fontSize: 11.5,
+    color: '#6b7280',
+    lineHeight: 17,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  consentLink: { color: '#6366F1', fontWeight: '600' },
+
   googleButton: {
     flexDirection: 'row',
     alignItems: 'center',

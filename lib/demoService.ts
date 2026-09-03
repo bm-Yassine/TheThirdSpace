@@ -335,6 +335,27 @@ export const demoService = {
     return delay('demo-payment');
   },
 
+  async reportContent() {
+    return delay('demo-report');
+  },
+
+  async blockUser() {
+    return delay(undefined);
+  },
+
+  async unblockUser() {
+    return delay(undefined);
+  },
+
+  async getBlockedUserIds() {
+    return delay([] as string[]);
+  },
+
+  async deleteAccountAndData(onStep?: (step: string) => void) {
+    onStep?.('Removing your profile');
+    return delay(undefined);
+  },
+
   buildRatingId(eventId: string, raterUid: string, rateeUid: string) {
     return `${eventId}_${raterUid}_${rateeUid}`;
   },
