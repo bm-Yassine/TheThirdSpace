@@ -22,8 +22,12 @@ import EventScheduleField, {
   type EventSchedule,
 } from '../components/EventScheduleField';
 import { combineDateAndTime, getEventStart } from '../lib/eventTime';
+import LocationField, { type LocationValue } from '../components/LocationField';
+import { uploadEventMedia, uploadEventAudio, isRemoteUri, type UploadProgress } from '../lib/storage';
+import { DEFAULT_MAP_CENTER, DEMO_MODE } from '../lib/config';
 import { upsertCachedEvent, invalidateEventFeedCache } from '../lib/eventFeed';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import type { Event, EventMedia, EventMusic } from '../lib/types';
 
 export default function CreateEventScreen() {
@@ -40,7 +44,6 @@ export default function CreateEventScreen() {
     title: string;
     type: string;
     timeFlexible: boolean;
-    location: string;
     minPeople: string;
     maxPeople: string;
     openToAll: boolean;
@@ -50,12 +53,13 @@ export default function CreateEventScreen() {
     musicTitle: string;
     musicArtist: string;
     musicStartAt: string;
+    musicUri: string;
+    musicFileName: string;
     media: EventMedia[];
   }>({
     title: '',
     type: '',
     timeFlexible: false,
-    location: '',
     minPeople: '',
     maxPeople: '',
     openToAll: true,
@@ -65,6 +69,8 @@ export default function CreateEventScreen() {
     musicTitle: '',
     musicArtist: '',
     musicStartAt: '',
+    musicUri: '',
+    musicFileName: '',
     media: [],
   });
 
@@ -72,6 +78,8 @@ export default function CreateEventScreen() {
   const [schedule, setSchedule] = useState<EventSchedule>(defaultSchedule);
   const [submitting, setSubmitting] = useState(false);
   const [loadedEvent, setLoadedEvent] = useState<any | null>(null);
+  const [location, setLocation] = useState<LocationValue>({ label: '' });
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
 
   // Waits for the auth provider to settle before deciding the user is signed
   // out — a synchronous currentUser read is null during web session restore.
@@ -135,7 +143,6 @@ export default function CreateEventScreen() {
           title: event.title || '',
           type: event.type || '',
           timeFlexible: !!event.timeFlexible,
-          location: event.location || '',
           minPeople: event.minAttendees ? String(event.minAttendees) : '',
           maxPeople: event.maxAttendees ? String(event.maxAttendees) : '',
           openToAll: !event.requiresApproval,
@@ -146,7 +153,15 @@ export default function CreateEventScreen() {
           musicArtist: event.music?.artist || '',
           musicStartAt:
             event.music?.startAtSeconds !== undefined ? String(event.music.startAtSeconds) : '',
+          musicUri: event.music?.uri || '',
+          musicFileName: event.music?.fileName || '',
           media: event.media || [],
+        });
+
+        setLocation({
+          label: event.location || '',
+          latitude: typeof event.latitude === 'number' ? event.latitude : undefined,
+          longitude: typeof event.longitude === 'number' ? event.longitude : undefined,
         });
 
         const start = getEventStart(event);
@@ -242,6 +257,38 @@ export default function CreateEventScreen() {
     }
   };
 
+  const pickAudioTrack = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const MAX_MB = 15;
+      if (asset.size && asset.size > MAX_MB * 1024 * 1024) {
+        Alert.alert('File too large', `Please choose a track under ${MAX_MB} MB.`);
+        return;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        musicUri: asset.uri,
+        musicFileName: asset.name || 'track',
+        // Seed the title from the filename when the field is still empty.
+        musicTitle: prev.musicTitle || (asset.name || '').replace(/\.[^.]+$/, ''),
+      }));
+    } catch (error) {
+      console.error('Error picking audio:', error);
+      Alert.alert('Error', 'Could not open your files right now.');
+    }
+  };
+
+  const removeAudioTrack = () =>
+    setFormData((prev) => ({ ...prev, musicUri: '', musicFileName: '' }));
+
   const removeMedia = (uri: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -268,7 +315,7 @@ export default function CreateEventScreen() {
       return;
     }
 
-    if (!formData.title || !formData.description || !formData.location || !formData.type) {
+    if (!formData.title || !formData.description || !location.label.trim() || !formData.type) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
@@ -312,6 +359,21 @@ export default function CreateEventScreen() {
       const parsedCost = formData.cost ? parseFloat(formData.cost.replace('$', '')) || 0 : 0;
       const maxAttendees = parseInt(formData.maxPeople) || undefined;
       const minAttendees = parseInt(formData.minPeople) || undefined;
+      // Upload the soundtrack if a local file was picked.
+      let musicUri = formData.musicUri;
+      if (musicUri && !isRemoteUri(musicUri) && !DEMO_MODE) {
+        try {
+          musicUri = await uploadEventAudio(musicUri, formData.musicFileName || 'track');
+        } catch (audioError) {
+          console.error('Audio upload failed:', audioError);
+          Alert.alert(
+            'Upload failed',
+            'The soundtrack could not be uploaded. The event has not been saved.'
+          );
+          return;
+        }
+      }
+
       const parsedMusicStartAt = parseFloat(formData.musicStartAt);
       const eventMusic: EventMusic | undefined = formData.musicTitle.trim()
         ? {
@@ -321,16 +383,41 @@ export default function CreateEventScreen() {
               Number.isFinite(parsedMusicStartAt) && parsedMusicStartAt >= 0
                 ? parsedMusicStartAt
                 : undefined,
+            uri: musicUri || undefined,
+            fileName: formData.musicFileName || undefined,
           }
         : undefined;
 
-      const primaryImageFromMedia = formData.media.find((item) => item.type === 'image')?.uri;
+      // Media must be uploaded before the event is written. Local picker URIs
+      // (file:// on native, blob: on web) resolve only on the device that
+      // picked them, so storing one would show every other user a broken image.
+      let uploadedMedia = formData.media;
+      if (formData.media.length > 0 && !DEMO_MODE) {
+        try {
+          uploadedMedia = await uploadEventMedia(formData.media, setUploadProgress);
+        } catch (uploadError) {
+          console.error('Media upload failed:', uploadError);
+          Alert.alert(
+            'Upload failed',
+            'Your photos could not be uploaded. The event has not been saved — check your connection and try again.'
+          );
+          return;
+        } finally {
+          setUploadProgress(null);
+        }
+      }
+
+      const primaryImageFromMedia = uploadedMedia.find((item) => item.type === 'image')?.uri;
 
       const eventData = {
         title: formData.title,
         type: formData.type,
         description: formData.description,
-        location: formData.location,
+        location: location.label.trim(),
+        // Only set when the organizer picked a real place; the map filters on
+        // these being finite numbers.
+        latitude: location.latitude,
+        longitude: location.longitude,
         // Authoritative schedule. `date`/`time` are also written as readable
         // strings so anything still reading the legacy fields keeps working.
         startsAt: startsAt.toISOString(),
@@ -344,7 +431,7 @@ export default function CreateEventScreen() {
         maxAttendees,
         minAttendees,
         music: eventMusic,
-        media: formData.media,
+        media: uploadedMedia,
         attendees: 0,
         organizer: { 
           uid: currentUser.uid,
@@ -443,7 +530,13 @@ export default function CreateEventScreen() {
                 : styles.createTextDisabled
             }
           >
-            {submitting ? 'Saving…' : isEditing ? 'Save' : 'Create'}
+            {uploadProgress
+              ? `${uploadProgress.percent}%`
+              : submitting
+              ? 'Saving…'
+              : isEditing
+              ? 'Save'
+              : 'Create'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -515,18 +608,9 @@ export default function CreateEventScreen() {
         </View>
 
         {/* Meeting Point */}
-        <View style={styles.formCard}>
+        <View style={[styles.formCard, styles.locationCard]}>
           <Text style={styles.label}>Meeting Point *</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.location}
-            onChangeText={(value) => handleInputChange('location', value)}
-            placeholder="Enter specific meeting point"
-            placeholderTextColor="#999"
-          />
-          <Text style={styles.helperText}>
-            Please provide a specific meeting point for attendees
-          </Text>
+          <LocationField value={location} onChange={setLocation} bias={DEFAULT_MAP_CENTER} />
         </View>
 
         {/* Number of People */}
@@ -653,8 +737,27 @@ export default function CreateEventScreen() {
             placeholderTextColor="#999"
             keyboardType="numeric"
           />
+          {formData.musicUri ? (
+            <View style={styles.trackRow}>
+              <Text style={styles.trackName} numberOfLines={1}>
+                {formData.musicFileName || 'Track attached'}
+              </Text>
+              <TouchableOpacity onPress={removeAudioTrack} hitSlop={8}>
+                <Text style={styles.trackRemove}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.mediaPickerButton, styles.inputSpacing]}
+              onPress={pickAudioTrack}
+            >
+              <Text style={styles.mediaPickerButtonText}>Attach an audio file</Text>
+            </TouchableOpacity>
+          )}
+
           <Text style={styles.helperText}>
-            You can connect this to a copyright-free music library later.
+            The track plays behind your event in the Discover feed. Upload music you
+            have the rights to use — a copyright-free library is coming.
           </Text>
         </View>
 
@@ -777,6 +880,22 @@ const styles = StyleSheet.create({
   formGroup: {
     marginBottom: 24,
   },
+  locationCard: { zIndex: 20 },
+  trackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#eef2ff',
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+  },
+  trackName: { flex: 1, fontSize: 13, color: '#3730a3', fontWeight: '600' },
+  trackRemove: { fontSize: 12, color: '#4f46e5', fontWeight: '700' },
   formCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,

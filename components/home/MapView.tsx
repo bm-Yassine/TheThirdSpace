@@ -18,8 +18,10 @@ interface MapViewProps {
   setViewMode: (mode: 'discover' | 'cards' | 'map') => void;
 }
 
-/** Falls back to New York when no event carries coordinates. */
-const DEFAULT_CENTER = { latitude: 40.7128, longitude: -74.006 };
+import { DEFAULT_MAP_CENTER } from '../../lib/config';
+
+/** Where the map opens when no event carries coordinates. */
+const DEFAULT_CENTER = DEFAULT_MAP_CENTER;
 
 export default function MapView({ viewMode, setViewMode }: MapViewProps) {
   const cached = getCachedEventFeed() ?? [];

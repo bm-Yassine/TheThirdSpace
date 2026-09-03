@@ -8,7 +8,12 @@ export type Organizer = {
 export type EventMusic = {
   title: string;
   artist?: string;
+  /** Where to start playback, so a track can open on its hook. */
   startAtSeconds?: number;
+  /** Storage download URL for the uploaded track. Absent means metadata only. */
+  uri?: string;
+  /** Original filename, shown while picking. */
+  fileName?: string;
 };
 
 export type EventMedia = {

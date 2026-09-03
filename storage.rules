@@ -1,0 +1,65 @@
+rules_version = '2';
+
+// Firebase Storage rules for The Third Space.
+//
+// Deploy with:  firebase deploy --only storage
+//
+// Media is world-readable because event photos appear in a public discovery
+// feed. Writes are restricted to the owning user's own folder, with size and
+// content-type limits so the bucket cannot be used as free file hosting.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*');
+    }
+
+    function isAudio() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+
+    function underMB(limit) {
+      return request.resource.size < limit * 1024 * 1024;
+    }
+
+    // Event photos and videos.
+    match /events/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isOwner(userId)
+                   && ((isImage() && underMB(10)) || (isVideo() && underMB(50)));
+      allow delete: if isOwner(userId);
+    }
+
+    // Profile photos.
+    match /avatars/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isOwner(userId) && isImage() && underMB(5);
+      allow delete: if isOwner(userId);
+    }
+
+    // Event soundtracks.
+    match /audio/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isOwner(userId) && isAudio() && underMB(15);
+      allow delete: if isOwner(userId);
+    }
+
+    // Nothing else is writable.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

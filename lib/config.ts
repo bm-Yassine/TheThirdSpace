@@ -23,3 +23,9 @@ export const PAYMENTS_API_BASE_URL =
   process.env.EXPO_PUBLIC_PAYMENTS_API_BASE_URL || '/api';
 
 export const STRIPE_ENABLED = Boolean(STRIPE_PUBLISHABLE_KEY);
+
+/**
+ * Where the map opens when there are no located events to centre on.
+ * Paris — the app's launch city.
+ */
+export const DEFAULT_MAP_CENTER = { latitude: 48.8566, longitude: 2.3522 };

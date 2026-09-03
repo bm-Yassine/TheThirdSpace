@@ -19,6 +19,7 @@ import { useAuth } from '../../lib/auth';
 import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
+import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
 import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -51,7 +52,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const [events, setEvents] = useState<Event[]>(initialEvents);
   const [loading, setLoading] = useState(initialEvents.length === 0);
   const [isAutoScrolling, setIsAutoScrolling] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(shouldStartMuted);
   const { user } = useAuth();
   const isLoggedIn = !!user;
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -408,6 +409,9 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         });
       }}
     >
+      {/* Plays the soundtrack of the event currently in view. */}
+      <EventAudioPlayer music={events[currentIndex]?.music} muted={isMuted} playing />
+
       {/* Main Content */}
       <ScrollView
         ref={scrollViewRef}
