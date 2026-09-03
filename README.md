@@ -2,7 +2,9 @@
 
 **Find what's happening around you.** A mobile-first event discovery app — scroll a full-screen feed of local events, join them, pay for them, chat with organizers, and rate each other afterwards.
 
-🔗 **Live:** [thethirdspaceapp.com](https://thethirdspaceapp.com) · 🎨 **Design:** Figma → shipped app, all in-house
+🔗 **Live:** [thethirdspaceapp.com](https://thethirdspaceapp.com) · 🎨 **Design:** [`design/`](design/) — Figma to shipped app, all in-house
+
+> **About this repo.** This is a project I designed, built, set down, and have since picked back up and substantially reworked. The interface was designed from scratch in Figma before any code existed — that work lives in [`design/`](design/). The application layer has since been rebuilt around a real scheduling model, transactional event participation, and a tested state machine. [`ROADMAP.md`](ROADMAP.md) tracks what is done and what is next.
 
 > The name comes from the sociological idea of a *third place* — the spaces beyond home (first) and work (second) where community actually happens.
 
@@ -12,11 +14,11 @@
 
 | | |
 |---|---|
-| **Discover** | Full-screen swipeable feed, upcoming events only, soonest first. Also a grid view and a map view with real pins. |
+| **Discover** | Full-screen swipeable feed, upcoming events only, soonest first. Plus a Cards grid with search and filters, and a map with real pins. |
 | **Create** | Events with a real date/time/duration, capacity, price, tags, music and media. |
 | **Join** | Four lanes handled properly: instant join, request-and-approve, pay-to-join, and a waitlist that promotes automatically. |
 | **Pay** | Stripe Checkout, with the price read server-side so it can't be tampered with. |
-| **Organize** | Approve or decline requests, work the waitlist, message attendees. |
+| **Organize** | Approve or decline requests, work the waitlist, edit or cancel the event, message attendees. |
 | **Chat** | Realtime 1:1 messaging with organizers and attendees. |
 | **Rate** | After an event ends, attendees rate the organizer and organizers rate attendees. Reputation is aggregated from real ratings. |
 | **Profile** | Interests and bio, plus what you're hosting, what's coming up, and what you've attended. |
@@ -131,17 +133,16 @@ firestore.rules           Security rules
 
 ## Status
 
-Implemented end-to-end: auth, profiles, event creation, discovery, favourites, the full join/approve/waitlist/pay flow, organizer management, realtime chat, post-event ratings, attendance history, and the map.
+Implemented: auth, profiles, event creation and editing, cancellation with attendee notification, discovery across three views, search and filtering, favourites, the full join / approve / waitlist / pay flow, organizer attendee management, realtime chat, post-event ratings, attendance history, and the map.
 
-Not done yet:
-- Google OAuth (UI present, needs iOS/Android client IDs)
-- Media upload to Firebase Storage (picker works, files aren't uploaded)
-- Push notifications
-- Copyright-free music library for event creation
-- n8n recommendation engine
+Verified against the live Firebase project: the client connects, security rules are enforced, and the app degrades correctly when the database is empty or unreachable. The pure logic — scheduling, the participation state machine, filter matching — has 68 unit tests.
+
+See [`ROADMAP.md`](ROADMAP.md) for what is next.
 
 ---
 
 ## Design
 
-The interface was designed from scratch in Figma before any code was written — the discovery feed, the floating navigation, the event creation flow and the rating screens. See the [design case study](https://github.com/bm-Yassine/thethirdspace-design) for the process from wireframe to shipped product.
+The interface was designed from scratch in Figma before any code was written — the discovery feed, the floating navigation, the event creation flow and the rating screens.
+
+**[→ Read the design case study in `design/`](design/README.md)** — the three-view discovery model, the four commitment states, the design system, and what changed between the wireframe and the shipped product.
