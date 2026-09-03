@@ -1,47 +1,55 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# Dependencies
 node_modules/
 
-# Expo
+# Expo / build output
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+*.tsbuildinfo
 
-# Native
+# Generated native projects
+/ios
+/android
 .kotlin/
 *.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
 
 # Metro
 .metro-health-check*
 
-# debug
+# --- Secrets -----------------------------------------------------------------
+# Only .env.example is committed. Everything below is either a secret or
+# machine-specific; nothing here may ever be tracked.
+.env
+.env.*
+!.env.example
+
+# Service accounts and signing material
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+google-services.json
+GoogleService-Info.plist
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.mobileprovision
+*.keystore
+
+# Vercel
+.vercel
+
+# Logs
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
-# macOS
+# Editor / OS
 .DS_Store
-*.pem
+.idea/
+*.swp
 
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
+# Scaffolding left by `npm run reset-project`
 app-example
-
-# generated native folders
-/ios
-/android
-
-# Google OAuth Setup
-google-services.json
-GoogleService-Info.plist
