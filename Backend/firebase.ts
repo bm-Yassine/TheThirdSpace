@@ -64,20 +64,54 @@ import {
   normalizeStatus,
 } from '../lib/participation';
 
-// Your web app's Firebase configuration
+/**
+ * Firebase client configuration.
+ *
+ * These values are not secrets. A Firebase web app ships them in its JavaScript
+ * bundle by necessity, so they are readable from any deployed site — the API
+ * key identifies the project, it does not grant access to it. What actually
+ * protects the data is Firestore and Storage security rules, plus API key
+ * restrictions in the Google Cloud console.
+ *
+ * They are read from the environment rather than hardcoded so the repository
+ * does not publish them itself, which is what automated key scanners flag.
+ */
+const readConfigValue = (name: string, value: string | undefined): string => {
+  if (value) return value;
+  throw new Error(
+    `Missing ${name}. Copy .env.example to .env.local and fill in the Firebase ` +
+      'values from the Firebase console (Project settings → Your apps → SDK setup). ' +
+      'On Vercel, add them as environment variables and redeploy.'
+  );
+};
+
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyDeExkfYP6q-4x2levBqNzvpYkHGC44X1Y',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'thirdspace-8092b.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'thirdspace-8092b',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'thirdspace-8092b.firebasestorage.app',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '258758943296',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:258758943296:web:ea21ab65e4fc01aa52b5a5',
-  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || 'G-TP70FQ8CVT',
-  WebClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID || '258758943296-p4o6gvj7l0f178o8tcf7549qkkiggif1.apps.googleusercontent.com'
+  apiKey: readConfigValue(
+    'EXPO_PUBLIC_FIREBASE_API_KEY',
+    process.env.EXPO_PUBLIC_FIREBASE_API_KEY
+  ),
+  authDomain: readConfigValue(
+    'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN',
+    process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
+  ),
+  projectId: readConfigValue(
+    'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
+    process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID
+  ),
+  storageBucket: readConfigValue(
+    'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET',
+    process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
+  ),
+  messagingSenderId: readConfigValue(
+    'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
+    process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+  ),
+  appId: readConfigValue('EXPO_PUBLIC_FIREBASE_APP_ID', process.env.EXPO_PUBLIC_FIREBASE_APP_ID),
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 export const googleClientIds = {
-  webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID || firebaseConfig.WebClientId,
+  webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID || '',
   iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID || '',
   androidClientId: process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID || '',
 };
