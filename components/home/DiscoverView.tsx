@@ -21,8 +21,19 @@ import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
 import Avatar from '../Avatar';
-import { Clock, MapPin, Users, Heart, Check } from 'lucide-react-native';
-import { Svg, Rect, Polygon, Path, Line } from 'react-native-svg';
+import {
+  ClockIcon,
+  PinIcon,
+  PeopleIcon,
+  HeartIcon,
+  CheckIcon,
+  PauseIcon,
+  PlayIcon,
+  SoundOnIcon,
+  SoundOffIcon,
+} from '../AppIcons';
+import { glassAccent, glassSurface } from '../Glass';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface DiscoverViewProps {
@@ -492,19 +503,19 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                 {/* Event Details */}
                 <View style={styles.detailsCard}>
                   <View style={styles.detailRow}>
-                    <Clock size={15} color="rgba(255,255,255,0.82)" />
+                    <ClockIcon size={16} color="rgba(255,255,255,0.86)" />
                     <Text style={styles.detailText}>
                       {formatEventDateLabel(event)} • {formatEventTimeRange(event)}
                     </Text>
                   </View>
 
                   <View style={styles.detailRow}>
-                    <MapPin size={15} color="rgba(255,255,255,0.82)" />
+                    <PinIcon size={16} color="rgba(255,255,255,0.86)" />
                     <Text style={styles.detailText}>{event.location}</Text>
                   </View>
 
                   <View style={styles.detailRow}>
-                    <Users size={15} color="rgba(255,255,255,0.82)" />
+                    <PeopleIcon size={16} color="rgba(255,255,255,0.86)" />
                     <Text style={styles.detailText}>
                       {event.attendees}/{event.maxAttendees} people
                     </Text>
@@ -529,10 +540,10 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                     style={[styles.favoriteButton, !isLoggedIn && styles.buttonDisabled]}
                     onPress={() => handleFavorite(event.id)}
                   >
-                    <Heart
-                      size={17}
+                    <HeartIcon
+                      size={18}
                       color="#ffffff"
-                      fill={favoriteIds.has(event.id.toString()) ? '#ffffff' : 'none'}
+                      filled={favoriteIds.has(event.id.toString())}
                     />
                     <Text style={styles.buttonText}>
                       {favoriteIds.has(event.id.toString()) ? 'Favorited' : 'Favorite'}
@@ -543,7 +554,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                     style={[styles.joinButton, !isLoggedIn && styles.buttonDisabled]}
                     onPress={() => handleJoinEvent(event.id)}
                   >
-                    <Check size={17} color="#ffffff" />
+                    <CheckIcon size={18} color="#ffffff" />
                     <Text style={styles.buttonText}>
                       {!isLoggedIn
                         ? 'Sign In to Join'
@@ -657,14 +668,9 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
               onPress={() => setIsAutoScrolling(!isAutoScrolling)}
             >
               {isAutoScrolling ? (
-                <Svg width={14} height={14} viewBox="0 0 24 24">
-                  <Rect x="6" y="5" width="4" height="14" fill="none" stroke={audioControlColor} strokeWidth="2" />
-                  <Rect x="14" y="5" width="4" height="14" fill="none" stroke={audioControlColor} strokeWidth="2" />
-                </Svg>
+                <PauseIcon size={16} color={audioControlColor} />
               ) : (
-                <Svg width={14} height={14} viewBox="0 0 24 24">
-                  <Polygon points="7,5 19,12 7,19" fill="none" stroke={audioControlColor} strokeWidth="2" />
-                </Svg>
+                <PlayIcon size={16} color={audioControlColor} />
               )}
             </TouchableOpacity>
 
@@ -677,14 +683,11 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
               ]}
               onPress={() => setIsMuted(!isMuted)}
             >
-              <Svg width={14} height={14} viewBox="0 0 24 24">
-                <Path d="M3 10v4h4l5 4V6L7 10H3z" fill="none" stroke={audioControlColor} strokeWidth="2" />
-                {isMuted ? (
-                  <Line x1="16" y1="8" x2="22" y2="16" stroke={audioControlColor} strokeWidth="2" />
-                ) : (
-                  <Path d="M16 9c1.5 1.5 1.5 4.5 0 6" fill="none" stroke={audioControlColor} strokeWidth="2" />
-                )}
-              </Svg>
+              {isMuted ? (
+                <SoundOffIcon size={16} color={audioControlColor} />
+              ) : (
+                <SoundOnIcon size={16} color={audioControlColor} />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -943,12 +946,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   audioControlButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
+    // 36pt matches the navigation buttons and the design system's minimum
+    // touch target; these were 30 and awkward to hit.
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    ...glassSurface(),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -974,10 +977,11 @@ const styles = StyleSheet.create({
     paddingBottom: 96,
   },
   detailsCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 16,
+    ...glassSurface({ strong: true }),
+    borderRadius: 18,
     padding: 16,
-    marginBottom: 16,
+    paddingVertical: 15,
+    marginBottom: 14,
   },
   detailRow: {
     flexDirection: 'row',
@@ -1021,25 +1025,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    // Favourite is a secondary action, so it reads as glass over the photo
-    // rather than competing with Join.
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.38)',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
+    // Same glass as the floating navigation, so the controls over a photo all
+    // belong to one set. Favourite is secondary and stays neutral.
+    ...glassSurface(),
+    paddingVertical: 15,
+    borderRadius: 16,
+    gap: 9,
   },
   joinButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    // Brand indigo, the same primary action colour used on every other screen.
-    backgroundColor: 'rgba(79, 70, 229, 0.94)',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
+    // Primary action: brand indigo, still glass so it sits in the same family.
+    ...glassAccent(),
+    paddingVertical: 15,
+    borderRadius: 16,
+    gap: 9,
   },
   buttonDisabled: {
     backgroundColor: 'rgba(156, 163, 175, 0.6)',
