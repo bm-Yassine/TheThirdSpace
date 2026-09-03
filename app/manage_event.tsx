@@ -18,11 +18,15 @@ import {
   UserCheck,
   Star,
   CreditCard,
+  Pencil,
+  Ban,
+  RotateCcw,
 } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { dataService } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import { formatEventDate, formatEventTime, hasEventEnded } from '../lib/eventTime';
+import { invalidateEventFeedCache } from '../lib/eventFeed';
 import type { Attendee } from '../lib/types';
 import { isAwaitingPayment } from '../lib/participation';
 
@@ -67,6 +71,7 @@ export default function ManageEventScreen() {
   const [participants, setParticipants] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingUid, setPendingUid] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const loadEvent = useCallback(async () => {
     if (!eventId) return;
@@ -151,6 +156,56 @@ export default function ManageEventScreen() {
     }
   };
 
+  const isCancelled = event?.status === 'cancelled';
+
+  const onCancelEvent = () => {
+    const headcount = grouped.confirmed.length + grouped.pending.length + grouped.waitlisted.length;
+    Alert.alert(
+      'Cancel this event?',
+      headcount > 0
+        ? `${headcount} ${headcount === 1 ? 'person' : 'people'} will be messaged to let them know. The event stays in everyone's history but disappears from Discover.`
+        : "The event will disappear from Discover. You can reopen it later.",
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Cancel event',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              const result = await dataService.cancelEvent(eventId);
+              invalidateEventFeedCache();
+              await loadEvent();
+              Alert.alert(
+                'Event cancelled',
+                result.notified > 0
+                  ? `${result.notified} ${result.notified === 1 ? 'person has' : 'people have'} been messaged.`
+                  : 'Nobody had joined, so no messages were sent.'
+              );
+            } catch (error: any) {
+              Alert.alert('Could not cancel', error?.message || 'Please try again.');
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const onReopenEvent = async () => {
+    setBusy(true);
+    try {
+      await dataService.reopenEvent(eventId);
+      invalidateEventFeedCache();
+      await loadEvent();
+    } catch (error: any) {
+      Alert.alert('Could not reopen', error?.message || 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const confirmDecline = (participant: Attendee) => {
     Alert.alert(
       `Decline ${participant.name}?`,
@@ -209,7 +264,19 @@ export default function ManageEventScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-        {ended && (
+        {isCancelled && (
+          <View style={styles.cancelledBanner}>
+            <Ban size={18} color="#b91c1c" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cancelledTitle}>This event is cancelled</Text>
+              <Text style={styles.cancelledBody}>
+                It no longer appears in Discover. Reopen it to make it joinable again.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {ended && !isCancelled && (
           <Pressable
             style={[styles.primaryBtn, styles.rateBtn]}
             onPress={() =>
@@ -219,6 +286,41 @@ export default function ManageEventScreen() {
             <Star size={16} color="#fff" />
             <Text style={styles.primaryBtnText}>Rate your attendees</Text>
           </Pressable>
+        )}
+
+        {!ended && (
+          <View style={styles.organizerActions}>
+            <Pressable
+              style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+              disabled={busy}
+              onPress={() =>
+                router.push({ pathname: '/create', params: { eventId: String(event.id) } })
+              }
+            >
+              <Pencil size={15} color="#374151" />
+              <Text style={styles.secondaryBtnText}>Edit details</Text>
+            </Pressable>
+
+            {isCancelled ? (
+              <Pressable
+                style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={onReopenEvent}
+              >
+                <RotateCcw size={15} color="#15803d" />
+                <Text style={[styles.secondaryBtnText, { color: '#15803d' }]}>Reopen</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[styles.secondaryBtn, styles.dangerBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={onCancelEvent}
+              >
+                <Ban size={15} color="#dc2626" />
+                <Text style={[styles.secondaryBtnText, { color: '#dc2626' }]}>Cancel event</Text>
+              </Pressable>
+            )}
+          </View>
         )}
 
         {SECTIONS.map((section) => {
@@ -387,5 +489,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rateBtn: { marginBottom: 20 },
+
+  organizerActions: { flexDirection: 'row', gap: 8, marginBottom: 22 },
+  secondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#fff',
+  },
+  secondaryBtnText: { fontSize: 13, fontWeight: '700', color: '#374151' },
+  dangerBtn: { borderColor: '#fecaca', backgroundColor: '#fef2f2' },
+  btnDisabled: { opacity: 0.5 },
+
+  cancelledBanner: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 18,
+  },
+  cancelledTitle: { fontSize: 14, fontWeight: '700', color: '#b91c1c' },
+  cancelledBody: { fontSize: 12, color: '#b91c1c', marginTop: 2, lineHeight: 17 },
   primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

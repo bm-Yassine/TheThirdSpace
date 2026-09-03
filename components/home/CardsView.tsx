@@ -16,6 +16,8 @@ import { router } from 'expo-router';
 import { dataService } from '../../Backend/firebase';
 import { useAuth } from '../../lib/auth';
 import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
+import EventFilterBar from '../EventFilterBar';
+import { applyFilters, emptyFilters, isFilterActive, type EventFilters } from '../../lib/eventFilters';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 
@@ -29,6 +31,7 @@ interface CardsViewProps {
 export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
   const initialEvents = getCachedEventFeed()?.slice(0, 25) ?? [];
   const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [filters, setFilters] = useState<EventFilters>(emptyFilters);
   const [loading, setLoading] = useState(initialEvents.length === 0);
   const { user } = useAuth();
   const isLoggedIn = !!user;
@@ -204,6 +207,8 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
     );
   }
 
+  const visibleEvents = applyFilters(events, filters);
+
   return (
     <View style={{ flex: 1 }}>
       {/* Top Right View Selector */}
@@ -261,12 +266,38 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
         </View>
       </View>
 
+      <EventFilterBar
+        events={events}
+        filters={filters}
+        onChange={setFilters}
+        resultCount={visibleEvents.length}
+      />
+
       <ScrollView
         style={styles.cardsScroll}
         contentContainerStyle={styles.cardsContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {events.map((event) => (
+        {visibleEvents.length === 0 && (
+          <View style={styles.emptyResults}>
+            <Text style={styles.emptyResultsTitle}>
+              {isFilterActive(filters) ? 'Nothing matches those filters' : 'No events yet'}
+            </Text>
+            <Text style={styles.emptyResultsBody}>
+              {isFilterActive(filters)
+                ? 'Try widening the date range or clearing a tag.'
+                : 'Be the first to create one.'}
+            </Text>
+            {isFilterActive(filters) && (
+              <Pressable onPress={() => setFilters(emptyFilters)} style={styles.emptyResultsBtn}>
+                <Text style={styles.emptyResultsBtnText}>Clear filters</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {visibleEvents.map((event) => (
           <Pressable 
             key={event.id} 
             style={styles.cardContainer}
@@ -382,7 +413,8 @@ const styles = StyleSheet.create({
   },
   cardsContent: {
     padding: 16,
-    paddingTop: 96,
+    // The filter bar now occupies the space the selector used to need.
+    paddingTop: 8,
     paddingBottom: 150,
   },
   cardContainer: {
@@ -481,6 +513,27 @@ const styles = StyleSheet.create({
   cardButtonDisabled: {
     backgroundColor: 'rgba(156, 163, 175, 0.8)',
   },
+  emptyResults: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 30,
+  },
+  emptyResultsTitle: { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  emptyResultsBody: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  emptyResultsBtn: {
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+  },
+  emptyResultsBtnText: { fontSize: 13, fontWeight: '700', color: '#111827' },
+
   topRightControls: {
     position: 'absolute',
     top: 60,

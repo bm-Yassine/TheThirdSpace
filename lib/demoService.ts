@@ -100,7 +100,37 @@ export const demoService = {
 
   async updateEvent(eventId: string, updates: any) {
     const event = demoState.events.get(String(eventId));
-    if (event) Object.assign(event, updates);
+    if (!event) throw new Error('Event not found');
+
+    Object.assign(event, updates, { updatedAt: new Date() });
+
+    // Keep endsAt derived, exactly as the Firestore path does.
+    if (updates.startsAt || updates.durationMinutes) {
+      const start = new Date(event.startsAt);
+      const minutes = Number(event.durationMinutes) || 120;
+      event.endsAt = new Date(start.getTime() + minutes * 60 * 1000).toISOString();
+    }
+    return delay(undefined);
+  },
+
+  async cancelEvent(eventId: string, reason?: string) {
+    const event = demoState.events.get(String(eventId));
+    if (!event) throw new Error('Event not found');
+
+    event.status = 'cancelled';
+    event.cancellationReason = reason?.trim() || '';
+    event.cancelledAt = new Date();
+
+    const notified = participantsFor(String(eventId)).filter((p) => p.status !== 'declined').length;
+    return delay({ notified });
+  },
+
+  async reopenEvent(eventId: string) {
+    const event = demoState.events.get(String(eventId));
+    if (!event) throw new Error('Event not found');
+    event.status = 'active';
+    event.cancellationReason = '';
+    event.cancelledAt = null;
     return delay(undefined);
   },
 

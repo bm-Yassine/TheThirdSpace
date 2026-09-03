@@ -20,6 +20,7 @@ import {
   Settings,
   Star,
   Clock,
+  Ban,
 } from 'lucide-react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { dataService, type UserCommitment } from '../Backend/firebase';
@@ -119,6 +120,7 @@ export default function ActivityDetailScreen() {
 
   const isOrganizer = !!user && !!event && event.createdBy === user.uid;
   const ended = !!event && hasEventEnded(event);
+  const isCancelled = event?.status === 'cancelled';
   const spotsLeft = useMemo(() => {
     if (!event?.maxAttendees) return null;
     return Math.max(Number(event.maxAttendees) - Number(event.attendees || 0), 0);
@@ -163,6 +165,10 @@ export default function ActivityDetailScreen() {
 
   const onPrimaryPress = async () => {
     if (!isLoggedIn || !event) return requireLogin();
+
+    if (isCancelled && !commitment) {
+      return Alert.alert('Event cancelled', 'This event is no longer taking part.');
+    }
 
     // Outstanding payment always takes priority over any other action.
     if (commitment && commitment.paymentStatus === 'pending' && Number(event.cost) > 0) {
@@ -247,6 +253,7 @@ export default function ActivityDetailScreen() {
   const primaryLabel = (() => {
     if (!isLoggedIn) return 'Sign In to Join';
     if (isOrganizer) return 'Manage Attendees';
+    if (isCancelled) return commitment ? 'Remove from my list' : 'Event cancelled';
     if (ended) return 'This event has ended';
     if (commitment?.paymentStatus === 'pending' && Number(event.cost) > 0) {
       return `Complete Payment · ${formatCurrency(Number(event.cost))}`;
@@ -422,17 +429,17 @@ export default function ActivityDetailScreen() {
 
         <Pressable
           onPress={primaryAction}
-          disabled={busy || (ended && !isOrganizer)}
+          disabled={busy || ((ended || (isCancelled && !commitment)) && !isOrganizer)}
           style={[
             styles.btn,
             isOrganizer
               ? styles.btnIndigo
-              : ended
+              : ended || isCancelled
               ? styles.btnGray
               : commitment
               ? styles.btnRed
               : styles.btnBlack,
-            (busy || (ended && !isOrganizer)) && styles.btnDisabled,
+            (busy || ((ended || (isCancelled && !commitment)) && !isOrganizer)) && styles.btnDisabled,
           ]}
         >
           {busy ? (
@@ -458,6 +465,19 @@ function buildBanner({
   isOrganizer: boolean;
   event: any;
 }) {
+  // A cancellation is the most important thing on the screen — it outranks
+  // "you're going", which would otherwise still be showing.
+  if (event?.status === 'cancelled') {
+    return {
+      Icon: Ban,
+      title: 'This event was cancelled',
+      desc: event.cancellationReason
+        ? `The organizer said: ${event.cancellationReason}`
+        : 'The organizer called it off. You have not been charged.',
+      style: styles.bannerRed,
+    };
+  }
+
   if (isOrganizer) {
     const pending = Number(event.pendingCount || 0);
     return {

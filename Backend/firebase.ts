@@ -444,13 +444,111 @@ const firestoreDataService = {
     return getMockEventById(eventId);
   },
 
+  /**
+   * Edits an event. Organizer only.
+   *
+   * Recomputes `endsAt` whenever the schedule moves, so the derived field can
+   * never drift from `startsAt` + `durationMinutes` — which is what decides
+   * whether an event counts as finished.
+   */
   async updateEvent(eventId: string, updates: Partial<DocumentData>) {
     const user = auth.currentUser;
     if (!user) throw new Error('User not authenticated');
 
     const eventRef = doc(db, 'events', eventId);
+    const snapshot = await getDoc(eventRef);
+    if (!snapshot.exists()) throw new Error('Event not found');
+    if ((snapshot.data() as any).createdBy !== user.uid) {
+      throw new Error('Only the organizer can edit this event');
+    }
+
+    const next: Record<string, any> = { ...updates, updatedAt: new Date() };
+
+    if (updates.startsAt || updates.durationMinutes) {
+      const merged = { ...(snapshot.data() as any), ...updates };
+      const start = getEventStart(merged);
+      const minutes = Number(merged.durationMinutes) || DEFAULT_EVENT_DURATION_MINUTES;
+      next.endsAt = start
+        ? new Date(start.getTime() + minutes * 60 * 1000).toISOString()
+        : null;
+    }
+
+    await updateDoc(eventRef, next);
+  },
+
+  /**
+   * Cancels an event without deleting it.
+   *
+   * Deleting would strip the event from every attendee's history and orphan
+   * their commitments. Cancelling keeps the record, hides it from discovery,
+   * and tells the people who were counting on it — via the existing chat
+   * threads, which is the only notification channel the app actually has.
+   */
+  async cancelEvent(eventId: string, reason?: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const eventRef = doc(db, 'events', eventId);
+    const snapshot = await getDoc(eventRef);
+    if (!snapshot.exists()) throw new Error('Event not found');
+
+    const eventData = snapshot.data() as any;
+    if (eventData.createdBy !== user.uid) {
+      throw new Error('Only the organizer can cancel this event');
+    }
+
     await updateDoc(eventRef, {
-      ...updates,
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancellationReason: reason?.trim() || '',
+      updatedAt: new Date(),
+    });
+
+    // Tell everyone who had a place or was waiting for one.
+    const participants = await this.getEventParticipants(eventId);
+    const toNotify = participants.filter((p) => p.status !== 'declined');
+
+    const message = reason?.trim()
+      ? `"${eventData.title}" has been cancelled by the organizer. Reason: ${reason.trim()}`
+      : `"${eventData.title}" has been cancelled by the organizer.`;
+
+    await Promise.all(
+      toNotify.map(async (participant) => {
+        try {
+          const conversationId = await this.getOrCreateConversation(participant.uid);
+          await this.sendMessage(conversationId, message);
+          // Reflect the cancellation in the participant's own view.
+          await setDoc(
+            doc(db, 'users', participant.uid, 'commitments', eventId),
+            { status: 'declined', reason: 'cancelled', updatedAt: new Date() },
+            { merge: true }
+          );
+        } catch (error) {
+          // One failed notification must not abort the cancellation.
+          console.warn(`Could not notify ${participant.uid} of cancellation:`, error);
+        }
+      })
+    );
+
+    return { notified: toNotify.length };
+  },
+
+  /** Reopens a cancelled event. */
+  async reopenEvent(eventId: string) {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    const eventRef = doc(db, 'events', eventId);
+    const snapshot = await getDoc(eventRef);
+    if (!snapshot.exists()) throw new Error('Event not found');
+    if ((snapshot.data() as any).createdBy !== user.uid) {
+      throw new Error('Only the organizer can reopen this event');
+    }
+
+    await updateDoc(eventRef, {
+      status: 'active',
+      cancelledAt: null,
+      cancellationReason: '',
       updatedAt: new Date(),
     });
   },

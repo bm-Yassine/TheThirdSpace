@@ -12,20 +12,27 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
 import { dataService, type UserProfile } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import EventScheduleField, {
   defaultSchedule,
+  toDateKey,
   type EventSchedule,
 } from '../components/EventScheduleField';
-import { combineDateAndTime } from '../lib/eventTime';
-import { upsertCachedEvent } from '../lib/eventFeed';
+import { combineDateAndTime, getEventStart } from '../lib/eventTime';
+import { upsertCachedEvent, invalidateEventFeedCache } from '../lib/eventFeed';
 import * as ImagePicker from 'expo-image-picker';
 import type { Event, EventMedia, EventMusic } from '../lib/types';
 
 export default function CreateEventScreen() {
+  // The same form serves create and edit. Passing ?eventId= switches it into
+  // edit mode rather than maintaining a second 800-line copy of this screen.
+  const params = useLocalSearchParams();
+  const editingEventId = String(params.eventId || '');
+  const isEditing = !!editingEventId;
+
   const { user, profile: authProfile, initializing, loadingProfile } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +71,7 @@ export default function CreateEventScreen() {
   const [newTag, setNewTag] = useState('');
   const [schedule, setSchedule] = useState<EventSchedule>(defaultSchedule);
   const [submitting, setSubmitting] = useState(false);
+  const [loadedEvent, setLoadedEvent] = useState<any | null>(null);
 
   // Waits for the auth provider to settle before deciding the user is signed
   // out — a synchronous currentUser read is null during web session restore.
@@ -71,7 +79,7 @@ export default function CreateEventScreen() {
     if (initializing) return;
 
     if (!user) {
-      Alert.alert('Sign in required', 'Please sign in to create an event.', [
+      Alert.alert('Sign in required', 'Please sign in to continue.', [
         { text: 'OK', onPress: () => router.replace('/login') },
       ]);
       setLoading(false);
@@ -98,6 +106,68 @@ export default function CreateEventScreen() {
       setLoading(false);
     }
   }, [initializing, user, authProfile, loadingProfile]);
+
+  // In edit mode, hydrate the form from the stored event.
+  useEffect(() => {
+    if (!isEditing || !user) return;
+
+    let active = true;
+    (async () => {
+      try {
+        const event: any = await dataService.getEvent(editingEventId);
+        if (!active) return;
+
+        if (!event) {
+          Alert.alert('Not found', 'That event no longer exists.', [
+            { text: 'OK', onPress: () => router.back() },
+          ]);
+          return;
+        }
+        if (event.createdBy !== user.uid) {
+          Alert.alert('Not allowed', 'Only the organizer can edit this event.', [
+            { text: 'OK', onPress: () => router.back() },
+          ]);
+          return;
+        }
+
+        setLoadedEvent(event);
+        setFormData({
+          title: event.title || '',
+          type: event.type || '',
+          timeFlexible: !!event.timeFlexible,
+          location: event.location || '',
+          minPeople: event.minAttendees ? String(event.minAttendees) : '',
+          maxPeople: event.maxAttendees ? String(event.maxAttendees) : '',
+          openToAll: !event.requiresApproval,
+          cost: event.cost ? String(event.cost) : '',
+          description: event.description || '',
+          tags: event.tags || [],
+          musicTitle: event.music?.title || '',
+          musicArtist: event.music?.artist || '',
+          musicStartAt:
+            event.music?.startAtSeconds !== undefined ? String(event.music.startAtSeconds) : '',
+          media: event.media || [],
+        });
+
+        const start = getEventStart(event);
+        if (start) {
+          setSchedule({
+            date: toDateKey(start),
+            time: `${String(start.getHours()).padStart(2, '0')}:${String(
+              start.getMinutes()
+            ).padStart(2, '0')}`,
+            durationMinutes: Number(event.durationMinutes) || 120,
+          });
+        }
+      } catch {
+        Alert.alert('Error', 'Could not load that event.');
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [isEditing, editingEventId, user]);
 
   const activityTypes = [
     'Sports',
@@ -216,6 +286,18 @@ export default function CreateEventScreen() {
 
     const minCapacity = parseInt(formData.minPeople, 10);
     const maxCapacity = parseInt(formData.maxPeople, 10);
+
+    if (
+      isEditing &&
+      Number.isFinite(maxCapacity) &&
+      maxCapacity < Number(loadedEvent?.attendees || 0)
+    ) {
+      Alert.alert(
+        'Capacity too low',
+        `${loadedEvent.attendees} people already have a confirmed place. Set the maximum to at least that.`
+      );
+      return;
+    }
     if (
       Number.isFinite(minCapacity) &&
       Number.isFinite(maxCapacity) &&
@@ -279,6 +361,26 @@ export default function CreateEventScreen() {
           'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop', // Default image
       };
 
+      if (isEditing) {
+        // Capacity and organizer identity are not editable here: lowering
+        // capacity below the number already confirmed would silently invalidate
+        // people's places, which needs its own flow.
+        await dataService.updateEvent(editingEventId, eventData);
+        invalidateEventFeedCache();
+
+        Alert.alert('Changes saved', 'Your event has been updated.', [
+          {
+            text: 'OK',
+            onPress: () =>
+              router.replace({
+                pathname: '/activity_detail',
+                params: { eventId: editingEventId },
+              }),
+          },
+        ]);
+        return;
+      }
+
       const eventId = await dataService.createEvent(eventData);
 
       const createdEvent: Event = {
@@ -294,9 +396,12 @@ export default function CreateEventScreen() {
         },
         { text: 'Done', onPress: () => router.replace('/home') },
       ]);
-    } catch (error) {
-      console.error('Error creating event:', error);
-      Alert.alert('Error', 'Failed to create event. Please try again.');
+    } catch (error: any) {
+      console.error(isEditing ? 'Error updating event:' : 'Error creating event:', error);
+      Alert.alert(
+        'Error',
+        error?.message || `Failed to ${isEditing ? 'update' : 'create'} the event. Please try again.`
+      );
     } finally {
       setSubmitting(false);
     }
@@ -321,7 +426,7 @@ export default function CreateEventScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.headerButton}>Cancel</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Event</Text>
+        <Text style={styles.headerTitle}>{isEditing ? 'Edit Event' : 'Create Event'}</Text>
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={formData.tags.length < 3 || submitting}
@@ -338,7 +443,7 @@ export default function CreateEventScreen() {
                 : styles.createTextDisabled
             }
           >
-            {submitting ? 'Creating…' : 'Create'}
+            {submitting ? 'Saving…' : isEditing ? 'Save' : 'Create'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -346,9 +451,13 @@ export default function CreateEventScreen() {
       {/* Form */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.introCard}>
-          <Text style={styles.introTitle}>Design your event experience</Text>
+          <Text style={styles.introTitle}>
+            {isEditing ? 'Update your event' : 'Design your event experience'}
+          </Text>
           <Text style={styles.introSubtitle}>
-            Add key details, soundtrack, and media to make your activity stand out.
+            {isEditing
+              ? 'Anyone who has already joined keeps their place. They are not notified of edits, so message them if the change matters.'
+              : 'Add key details, soundtrack, and media to make your activity stand out.'}
           </Text>
         </View>
 
