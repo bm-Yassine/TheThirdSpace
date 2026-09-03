@@ -23,6 +23,7 @@ import {
   RotateCcw,
 } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Image } from 'react-native';
 import { dataService } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import { formatEventDate, formatEventTime, hasEventEnded } from '../lib/eventTime';
@@ -344,9 +345,13 @@ export default function ManageEventScreen() {
               ) : (
                 rows.map((participant, index) => (
                   <View key={participant.uid} style={styles.row}>
-                    <View style={styles.rowAvatar}>
-                      <Text style={{ fontSize: 18 }}>{participant.avatar || '👤'}</Text>
-                    </View>
+                    {participant.photoURL ? (
+                      <Image source={{ uri: participant.photoURL }} style={styles.rowAvatar} />
+                    ) : (
+                      <View style={styles.rowAvatar}>
+                        <Text style={{ fontSize: 18 }}>{participant.avatar || '👤'}</Text>
+                      </View>
+                    )}
 
                     <View style={{ flex: 1 }}>
                       <Text style={styles.rowName}>{participant.name}</Text>

@@ -23,6 +23,7 @@ import {
   Ban,
 } from 'lucide-react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Image } from 'react-native';
 import { dataService, type UserCommitment } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import {
@@ -352,9 +353,13 @@ export default function ActivityDetailScreen() {
           }
           style={styles.orgRow}
         >
-          <View style={styles.orgAvatar}>
-            <Text style={{ fontSize: 20 }}>{event.organizer?.avatar || '👤'}</Text>
-          </View>
+          {event.organizer?.photoURL ? (
+            <Image source={{ uri: event.organizer.photoURL }} style={styles.orgAvatar} />
+          ) : (
+            <View style={styles.orgAvatar}>
+              <Text style={{ fontSize: 20 }}>{event.organizer?.avatar || '👤'}</Text>
+            </View>
+          )}
           <View style={{ flex: 1 }}>
             <Text style={styles.orgName}>{event.organizer?.name || 'Unknown Organizer'}</Text>
             <Text style={styles.subtle}>{isOrganizer ? 'You are hosting' : 'Event Organizer'}</Text>

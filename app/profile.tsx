@@ -9,7 +9,11 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
-import { LogOut, ChevronRight, Star, Calendar, History, Settings } from 'lucide-react-native';
+import { LogOut, ChevronRight, Star, Calendar, History, Settings, Camera } from 'lucide-react-native';
+import { Image } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadProfilePhoto } from '../lib/storage';
+import { DEMO_MODE } from '../lib/config';
 import { router, useFocusEffect } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
 import { dataService, type UserCommitment } from '../Backend/firebase';
@@ -52,6 +56,7 @@ export default function ProfileScreen() {
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editInterests, setEditInterests] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const loadProfileData = useCallback(async () => {
     if (!user) return;
@@ -139,6 +144,42 @@ export default function ProfileScreen() {
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3);
   }, [reputation]);
+
+  const onChangePhoto = async () => {
+    if (!user) return;
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Allow photo access to set a profile picture.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      if (DEMO_MODE) {
+        // No Firebase in demo mode; show the local pick so the flow is visible.
+        patchProfile({ photoURL: result.assets[0].uri });
+        return;
+      }
+
+      setUploadingPhoto(true);
+      const url = await uploadProfilePhoto(result.assets[0].uri);
+      await dataService.updateUserProfile(user.uid, { photoURL: url });
+      patchProfile({ photoURL: url });
+    } catch (error) {
+      console.error('Profile photo upload failed:', error);
+      Alert.alert('Upload failed', 'Could not update your photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const onSaveProfile = async () => {
     if (!user) return;
@@ -253,9 +294,22 @@ export default function ProfileScreen() {
         {activeTab === 'overview' && (
           <>
             <View style={styles.userRow}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>👤</Text>
-              </View>
+              <Pressable onPress={onChangePhoto} style={styles.avatarWrap} disabled={uploadingPhoto}>
+                {profile?.photoURL ? (
+                  <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>👤</Text>
+                  </View>
+                )}
+                <View style={styles.avatarBadge}>
+                  {uploadingPhoto ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Camera size={13} color="#fff" />
+                  )}
+                </View>
+              </Pressable>
               <View style={{ flex: 1 }}>
                 <Text style={styles.h2}>{profile?.displayName || 'User'}</Text>
                 <Text style={styles.muted}>{profile?.email || user?.email || ''}</Text>
@@ -541,6 +595,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#fff' },
 
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  avatarWrap: { width: 62, height: 62 },
   avatar: {
     width: 62,
     height: 62,
@@ -548,6 +603,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#e5e7eb',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#4f46e5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   avatarText: { fontSize: 28 },
   ghostIconBtn: { padding: 9, borderRadius: 999, backgroundColor: '#f3f4f6' },
