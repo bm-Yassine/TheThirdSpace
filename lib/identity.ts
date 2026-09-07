@@ -60,6 +60,3 @@ export const initialsFor = (name?: string | null): string => {
   const letters = cleaned.replace(/[^\p{L}\p{N}]/gu, '');
   return letters.slice(0, 2).toUpperCase() || '·';
 };
-
-/** Slight rotation per user so identical initials still look distinct. */
-export const angleFor = (seed: string): number => (hash(seed || 'anonymous') % 8) * 45;

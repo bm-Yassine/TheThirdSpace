@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect, Circle, G } from 'react-native-svg';
-import { angleFor, initialsFor, paletteFor } from '../lib/identity';
+import { initialsFor, paletteFor } from '../lib/identity';
 
 /**
  * A person, rendered consistently everywhere they appear.
@@ -35,21 +35,52 @@ export default function Avatar({
 
   if (photoURL) {
     return (
-      <Image
-        source={{ uri: photoURL }}
-        style={[{ width: size, height: size, borderRadius: radius }, ringStyle]}
-      />
+      // Wrapped and clipped rather than relying on borderRadius on the image:
+      // react-native-web renders Image as an <img> whose default object-fit is
+      // `fill`, which stretches a portrait photo into the square instead of
+      // cropping it, and does not always honour the radius.
+      <View
+        style={[
+          { width: size, height: size, borderRadius: radius, overflow: 'hidden' },
+          ringStyle,
+        ]}
+      >
+        <Image
+          source={{ uri: photoURL }}
+          // Set on both the prop and the style: react-native-web has mapped
+          // resizeMode from each across different versions, and the default
+          // (`fill`) stretches a portrait photo rather than cropping it.
+          resizeMode="cover"
+          style={{ width: '100%', height: '100%', resizeMode: 'cover' }}
+        />
+      </View>
     );
   }
 
   const seed = uid || name || 'anonymous';
   const palette = paletteFor(seed);
   const initials = initialsFor(name);
-  const rotation = angleFor(seed);
 
-  // Scales with size so the mark reads the same at 28px and at 96px.
-  const markRadius = 26;
-  const offset = 15;
+  /**
+   * The three circles sit on an equilateral arrangement whose bounding box is
+   * centred in the tile (verified: x 19.7–80.3, y 21.0–78.5, both midpoints
+   * 50). The previous placement was not equilateral and was drawn around
+   * y=50, which put the mass low and left and read as badly centred. The tile
+   * is also no longer rotated per user — rotating a three-fold shape by an
+   * arbitrary angle shifts its bounding box, and the per-user variety already
+   * comes from the palette and the initials.
+   */
+  const MARK_CENTRE_Y = 53;
+  const MARK_DISTANCE = 13;
+  const MARK_RADIUS = 19;
+
+  const markCentres = [-90, 30, 150].map((degrees) => {
+    const radians = (degrees * Math.PI) / 180;
+    return {
+      cx: 50 + MARK_DISTANCE * Math.cos(radians),
+      cy: MARK_CENTRE_Y + MARK_DISTANCE * Math.sin(radians),
+    };
+  });
 
   return (
     <View style={[{ width: size, height: size, borderRadius: radius, overflow: 'hidden' }, ringStyle]}>
@@ -63,15 +94,19 @@ export default function Avatar({
 
         <Rect width="100" height="100" fill={`url(#g-${seed})`} />
 
-        {/*
-          The mark, ghosted — identity without competing with the initials.
-          Uses an SVG transform rather than react-native-svg's rotation/origin
-          props, which serialise to an invalid DOM attribute on web.
-        */}
-        <G opacity={0.26} transform={`rotate(${rotation} 50 50)`}>
-          <Circle cx="50" cy={50 - offset} r={markRadius} fill="none" stroke="#fff" strokeWidth="4" />
-          <Circle cx={50 - offset} cy={50 + offset * 0.7} r={markRadius} fill="none" stroke="#fff" strokeWidth="4" />
-          <Circle cx={50 + offset} cy={50 + offset * 0.7} r={markRadius} fill="none" stroke="#fff" strokeWidth="4" />
+        {/* The mark, ghosted — identity without competing with the initials. */}
+        <G opacity={0.24}>
+          {markCentres.map((circle, index) => (
+            <Circle
+              key={index}
+              cx={circle.cx}
+              cy={circle.cy}
+              r={MARK_RADIUS}
+              fill="none"
+              stroke="#fff"
+              strokeWidth="3.4"
+            />
+          ))}
         </G>
       </Svg>
 
