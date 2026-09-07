@@ -17,6 +17,7 @@ import { dataService } from '../../Backend/firebase';
 import { useAuth } from '../../lib/auth';
 import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
 import EventFilterBar from '../EventFilterBar';
+import EmptyFeed from '../EmptyFeed';
 import { applyFilters, emptyFilters, isFilterActive, type EventFilters } from '../../lib/eventFilters';
 import { useNearby } from '../../lib/useNearby';
 import { byDistanceFrom, distanceToEvent, formatDistance } from '../../lib/geo';
@@ -203,10 +204,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
 
   if (events.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No events found</Text>
-        <Text style={styles.emptySubtext}>Create your first event!</Text>
-      </View>
+      <EmptyFeed tone="dark" />
     );
   }
 
@@ -289,19 +287,11 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
       >
         {visibleEvents.length === 0 && (
           <View style={styles.emptyResults}>
-            <Text style={styles.emptyResultsTitle}>
-              {isFilterActive(filters) ? 'Nothing matches those filters' : 'No events yet'}
-            </Text>
-            <Text style={styles.emptyResultsBody}>
-              {isFilterActive(filters)
-                ? 'Try widening the date range or clearing a tag.'
-                : 'Be the first to create one.'}
-            </Text>
-            {isFilterActive(filters) && (
-              <Pressable onPress={() => setFilters(emptyFilters)} style={styles.emptyResultsBtn}>
-                <Text style={styles.emptyResultsBtnText}>Clear filters</Text>
-              </Pressable>
-            )}
+            <EmptyFeed
+              tone="dark"
+              filtered={isFilterActive(filters)}
+              onClearFilters={() => setFilters(emptyFilters)}
+            />
           </View>
         )}
 
@@ -528,9 +518,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(156, 163, 175, 0.8)',
   },
   emptyResults: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 30,
+    // Inside a ScrollView, EmptyFeed's flex:1 collapses; give it real height.
+    height: 460,
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   emptyResultsTitle: { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
   emptyResultsBody: {

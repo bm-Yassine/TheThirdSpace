@@ -21,6 +21,7 @@ import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
 import Avatar from '../Avatar';
+import EmptyFeed from '../EmptyFeed';
 import {
   ClockIcon,
   PinIcon,
@@ -402,10 +403,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
 
   if (events.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No events found</Text>
-        <Text style={styles.emptySubtext}>Create your first event!</Text>
-      </View>
+      <EmptyFeed tone="dark" />
     );
   }
 
