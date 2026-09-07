@@ -29,3 +29,11 @@ export const STRIPE_ENABLED = Boolean(STRIPE_PUBLISHABLE_KEY);
  * Paris — the app's launch city.
  */
 export const DEFAULT_MAP_CENTER = { latitude: 48.8566, longitude: 2.3522 };
+
+/**
+ * Canonical public URL, used to build shareable event links.
+ * Falls back to the browser's own origin on web so preview deploys share
+ * links that point at themselves rather than at production.
+ */
+export const PUBLIC_SITE_URL =
+  process.env.EXPO_PUBLIC_SITE_URL || 'https://thethirdspaceapp.com';

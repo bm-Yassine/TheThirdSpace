@@ -19,6 +19,9 @@ interface MapViewProps {
 }
 
 import { DEFAULT_MAP_CENTER } from '../../lib/config';
+import { useNearby } from '../../lib/useNearby';
+import { distanceToEvent, formatDistance } from '../../lib/geo';
+import { Navigation } from 'lucide-react-native';
 
 /** Where the map opens when no event carries coordinates. */
 const DEFAULT_CENTER = DEFAULT_MAP_CENTER;
@@ -28,6 +31,7 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
   const [events, setEvents] = useState<Event[]>(cached);
   const [loading, setLoading] = useState(cached.length === 0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const nearby = useNearby(DEFAULT_MAP_CENTER);
 
   useEffect(() => {
     let isMounted = true;
@@ -72,14 +76,16 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
   );
 
   /**
-   * Centre on the median coordinate rather than the mean.
+   * Where the map opens.
    *
-   * A mean centroid is pulled apart by outliers: a handful of events in one
-   * city and one in another puts the centre in the ocean between them, showing
-   * empty water and no pins. The median always lands inside the densest
-   * cluster, which is where the user's events almost always are.
+   * The viewer's own location when they have allowed it — that is what "near
+   * me" means. Otherwise the median event coordinate rather than the mean: a
+   * mean centroid is pulled apart by outliers, so a handful of events in one
+   * city and one in another put the centre in the ocean between them, showing
+   * empty water and no pins.
    */
   const center = useMemo(() => {
+    if (nearby.coords) return nearby.coords;
     if (locatedEvents.length === 0) return DEFAULT_CENTER;
 
     const median = (values: number[]) => {
@@ -94,7 +100,7 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
       latitude: median(locatedEvents.map((event) => event.latitude as number)),
       longitude: median(locatedEvents.map((event) => event.longitude as number)),
     };
-  }, [locatedEvents]);
+  }, [locatedEvents, nearby.coords]);
 
   const selectedEvent = useMemo(
     () => locatedEvents.find((event) => String(event.id) === selectedId) || null,
@@ -187,6 +193,25 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
         </View>
       )}
 
+      {nearby.status !== 'granted' && (
+        <Pressable
+          style={styles.nearMeBtn}
+          onPress={nearby.request}
+          disabled={nearby.status === 'requesting'}
+        >
+          <Navigation size={15} color="#111827" />
+          <Text style={styles.nearMeText}>
+            {nearby.status === 'requesting'
+              ? 'Locating…'
+              : nearby.status === 'denied'
+              ? 'Location blocked'
+              : nearby.status === 'unavailable'
+              ? 'Location unavailable'
+              : 'Near me'}
+          </Text>
+        </Pressable>
+      )}
+
       {selectedEvent && (
         <Pressable
           style={styles.selectedCard}
@@ -206,6 +231,10 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
             </Text>
             <Text style={styles.selectedMeta} numberOfLines={1}>
               {selectedEvent.location}
+              {(() => {
+                const km = distanceToEvent(nearby.coords, selectedEvent);
+                return km === null ? '' : ` · ${formatDistance(km)} away`;
+              })()}
             </Text>
           </View>
           <Text style={styles.selectedCta}>View</Text>
@@ -217,6 +246,27 @@ export default function MapView({ viewMode, setViewMode }: MapViewProps) {
 }
 
 const styles = StyleSheet.create({
+  nearMeBtn: {
+    position: 'absolute',
+    top: 60,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  nearMeText: { fontSize: 12.5, fontWeight: '700', color: '#111827' },
+
   emptyOverlay: {
     position: 'absolute',
     top: '38%',

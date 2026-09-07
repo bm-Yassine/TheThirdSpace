@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "The Third Space uses your location to show events happening near you. It is never shared or stored."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -39,7 +42,13 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "The Third Space uses your location to show events happening near you."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

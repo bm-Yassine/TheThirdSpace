@@ -22,6 +22,7 @@ import {
   Clock,
   Ban,
   Flag,
+  Share2,
 } from 'lucide-react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Image } from 'react-native';
@@ -37,6 +38,8 @@ import { invalidateEventFeedCache } from '../lib/eventFeed';
 import { confirmCheckout } from '../lib/payments';
 import ReportDialog from '../components/ReportDialog';
 import Avatar from '../components/Avatar';
+import AttendeeStrip from '../components/AttendeeStrip';
+import { shareEvent } from '../lib/share';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
@@ -295,6 +298,21 @@ export default function ActivityDetailScreen() {
             </Pressable>
           )}
           <Pressable
+            onPress={async () => {
+              const outcome = await shareEvent(event);
+              if (outcome === 'copied') {
+                Alert.alert('Link copied', 'Paste it wherever you like.');
+              } else if (outcome === 'failed') {
+                Alert.alert('Could not share', 'Please try again.');
+              }
+            }}
+            style={[styles.iconBtn, styles.iconBtnNeutral]}
+            hitSlop={8}
+          >
+            <Share2 size={19} color="#374151" />
+          </Pressable>
+
+          <Pressable
             onPress={toggleFavorite}
             style={[styles.iconBtn, isFavorite ? styles.heartActive : styles.heartIdle]}
             hitSlop={8}
@@ -433,6 +451,23 @@ export default function ActivityDetailScreen() {
               </View>
             ))}
           </View>
+        )}
+
+        {isLoggedIn && (
+          <AttendeeStrip
+            eventId={String(event.id)}
+            totalGoing={Number(event.attendees || 0)}
+            onMessage={(uid, name) => {
+              if (uid === user?.uid) return;
+              Alert.alert(name, 'Send them a message?', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Message',
+                  onPress: () => router.push({ pathname: '/chats', params: { otherUserId: uid } }),
+                },
+              ]);
+            }}
+          />
         )}
 
         {!isOrganizer && isLoggedIn && (

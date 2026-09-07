@@ -179,6 +179,30 @@ const buildState = (): DemoState => {
   const participants = new Map<string, Attendee[]>();
   Object.entries(hostedParticipants).forEach(([id, list]) => participants.set(id, [...list]));
 
+  // Seed a few attendees on the shared seed events too, so "Who's going"
+  // has something to show on events the demo user did not create.
+  const guestPool = [...confirmedGuests, ...otherPeople];
+  mockEvents.forEach((event, index) => {
+    const going = Math.min(Number(event.attendees) || 0, 5);
+    if (going === 0) return;
+
+    participants.set(
+      String(event.id),
+      Array.from({ length: going }, (_, seat) => {
+        const guest = guestPool[(index * 3 + seat) % guestPool.length];
+        return {
+          uid: guest.uid,
+          name: guest.name,
+          avatar: (guest as any).avatar,
+          status: 'confirmed' as const,
+          reason: 'direct' as const,
+          paymentStatus: 'not_required' as const,
+          joinedAt: new Date(Date.now() - days(seat + 1)),
+        };
+      })
+    );
+  });
+
   // Two upcoming, two attended — enough to show both profile tabs populated.
   const commitments = new Map<string, UserCommitment>([
     ['2', { eventId: '2', status: 'confirmed', reason: 'direct', paymentStatus: 'completed', committedAt: new Date(Date.now() - days(3)), eventTitle: 'Photography Walk' }],

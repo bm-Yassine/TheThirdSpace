@@ -18,6 +18,8 @@ import { useAuth } from '../../lib/auth';
 import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
 import EventFilterBar from '../EventFilterBar';
 import { applyFilters, emptyFilters, isFilterActive, type EventFilters } from '../../lib/eventFilters';
+import { useNearby } from '../../lib/useNearby';
+import { byDistanceFrom, distanceToEvent, formatDistance } from '../../lib/geo';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 
@@ -32,6 +34,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
   const initialEvents = getCachedEventFeed()?.slice(0, 25) ?? [];
   const [events, setEvents] = useState<Event[]>(initialEvents);
   const [filters, setFilters] = useState<EventFilters>(emptyFilters);
+  const nearby = useNearby();
   const [loading, setLoading] = useState(initialEvents.length === 0);
   const { user } = useAuth();
   const isLoggedIn = !!user;
@@ -207,7 +210,12 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
     );
   }
 
-  const visibleEvents = applyFilters(events, filters);
+  // Once the viewer's location is known, nearest first is a more useful
+  // default order than soonest — they are already filtering by date if timing
+  // is what matters to them.
+  const visibleEvents = nearby.coords
+    ? [...applyFilters(events, filters)].sort(byDistanceFrom(nearby.coords))
+    : applyFilters(events, filters);
 
   return (
     <View style={{ flex: 1 }}>
@@ -328,7 +336,13 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
               <Text style={styles.cardDetailText}>
                 {`${formatEventDateLabel(event)} • ${formatEventTimeRange(event)}`}
               </Text>
-              <Text style={styles.cardDetailText}>{event.location}</Text>
+              <Text style={styles.cardDetailText}>
+                {event.location}
+                {(() => {
+                  const km = distanceToEvent(nearby.coords, event);
+                  return km === null ? '' : ` · ${formatDistance(km)}`;
+                })()}
+              </Text>
               <Text style={styles.cardDetailText}>
                 {`${event.attendees}/${event.maxAttendees} people`}
               </Text>
