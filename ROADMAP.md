@@ -63,17 +63,35 @@ how events actually spread, and it's small.
 Only the organizer can see who is coming. "Who else is going" is one of the
 strongest reasons someone commits, and the data is already there.
 
-### 4. Recommendation engine for Discover
+### 4. Recommendation engine for Discover — stage 1 shipped
 Discover's ordering is deliberately left alone by the filter work — filtering
 belongs on Cards. The Discover feed is meant to be **ordered**, not filtered:
 ranked by mood, location, what's happening nearby, what's trending, and the
 user's personality and past attendance.
 
-This is the most ambitious item and needs deciding before it's built:
-- What signals are captured, and how they're gathered without being invasive
-- Whether ranking runs client-side, in a serverless function, or through n8n
-- A cold-start ordering for users with no history
-- How a user sees and corrects why something was surfaced
+**Shipped:** a transparent weighted scorer (`lib/recommend.ts`) over interests,
+distance, timing, social proof, organizer reputation, price fit and novelty,
+with an optional weather demotion for outdoor events. Every card carries the
+reason it was surfaced. 24 tests, including the cold-start case.
+
+Deliberately not a learned model: with few users and few events there is
+nothing to fit, and cold start *is* the product right now.
+
+**Next**, in order:
+1. `lib/signals.ts` already records impressions, opens, favourites and joins.
+   Let that accumulate — it is the only route from guessed weights to fitted
+   ones, and the data cannot be recovered retrospectively.
+2. Feed revealed preference back in: tags from events someone actually joined
+   should count alongside their stated interests.
+3. Fit the weights against real outcomes (logistic regression is enough) once
+   there are a few thousand interactions.
+4. Only then consider a learned ranker, and keep the reason strings.
+
+Open questions:
+- Whether ranking stays client-side or moves to a serverless function once the
+  candidate set outgrows a single fetch
+- Whether mood is asked for explicitly as a filter, or dropped — inferring it
+  is unreliable and invasive, and asking daily is friction few will accept
 
 ### 5. Motion and flow pass
 The identity is done — the mark, splash and icons ship. What remains is motion.

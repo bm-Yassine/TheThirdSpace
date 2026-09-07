@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,9 @@ import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
 import Avatar from '../Avatar';
 import EmptyFeed from '../EmptyFeed';
 import EventMediaBackground from '../EventMediaBackground';
+import { rankEvents } from '../../lib/recommend';
+import { recordSignal, flushSignals } from '../../lib/signals';
+import { useNearby } from '../../lib/useNearby';
 import {
   ClockIcon,
   PinIcon,
@@ -68,8 +71,9 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const [loading, setLoading] = useState(initialEvents.length === 0);
   const [isAutoScrolling, setIsAutoScrolling] = useState(true);
   const [isMuted, setIsMuted] = useState(shouldStartMuted);
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const isLoggedIn = !!user;
+  const nearby = useNearby();
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [showConfetti, setShowConfetti] = useState(false);
@@ -81,7 +85,30 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const [audioTickerViewportWidth, setAudioTickerViewportWidth] = useState(0);
   const [audioTickerTextWidth, setAudioTickerTextWidth] = useState(0);
 
-  const currentMusicTitle = events[currentIndex]?.music?.title || 'Ambient Vibes';
+  /**
+   * Discover is ordered, not filtered — filtering lives on Cards. The ranker
+   * weighs interests, distance, timing, social proof, organizer reputation and
+   * price, and returns a reason per event so a card can say why it is here.
+   */
+  const ranked = useMemo(
+    () =>
+      rankEvents(events, {
+        interests: profile?.interests || [],
+        coords: nearby.coords,
+        now: new Date(),
+        seenEventIds: undefined,
+      }),
+    [events, profile?.interests, nearby.coords]
+  );
+
+  const orderedEvents = useMemo(() => ranked.map((r) => r.event), [ranked]);
+  const reasonFor = useCallback(
+    (eventId: string | number) =>
+      ranked.find((r) => String(r.event.id) === String(eventId))?.reasons ?? [],
+    [ranked]
+  );
+
+  const currentMusicTitle = orderedEvents[currentIndex]?.music?.title || 'Ambient Vibes';
   const tickerOverflowDistance = Math.max(0, audioTickerTextWidth - audioTickerViewportWidth);
   const shouldMarquee = !isMuted && tickerOverflowDistance > 2;
   const marqueeTranslateX = marqueeAnimation.interpolate({
@@ -170,8 +197,20 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   }, []);
 
   // Auto-scroll every 7 seconds
+  // Log the card actually in view, with the score that put it there.
   useEffect(() => {
-    if (events.length === 0 || !isAutoScrolling) {
+    const current = orderedEvents[currentIndex];
+    if (!current) return;
+    const score = ranked.find((r) => String(r.event.id) === String(current.id))?.score;
+    recordSignal(String(current.id), 'impression', score);
+  }, [currentIndex, orderedEvents, ranked]);
+
+  useEffect(() => () => {
+    flushSignals();
+  }, []);
+
+  useEffect(() => {
+    if (orderedEvents.length === 0 || !isAutoScrolling) {
       if (autoScrollTimer.current) {
         clearInterval(autoScrollTimer.current);
       }
@@ -179,7 +218,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     }
 
     autoScrollTimer.current = setInterval(() => {
-      const nextIndex = (currentIndex + 1) % events.length;
+      const nextIndex = (currentIndex + 1) % orderedEvents.length;
       setCurrentIndex(nextIndex);
       scrollViewRef.current?.scrollTo({
         y: nextIndex * PAGE_HEIGHT,
@@ -192,7 +231,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         clearInterval(autoScrollTimer.current);
       }
     };
-  }, [currentIndex, events.length, isAutoScrolling, PAGE_HEIGHT, setCurrentIndex]);
+  }, [currentIndex, orderedEvents.length, isAutoScrolling, PAGE_HEIGHT, setCurrentIndex]);
 
   useEffect(() => {
     marqueeLoopRef.current?.stop?.();
@@ -233,7 +272,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     }
 
     const rootStyle = document.documentElement.style;
-    const currentImageUrl = events[currentIndex]?.imageUrl;
+    const currentImageUrl = orderedEvents[currentIndex]?.imageUrl;
 
     if (currentImageUrl) {
       rootStyle.setProperty('--discover-media-url', `url(${JSON.stringify(currentImageUrl)})`);
@@ -260,14 +299,14 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const handleScroll = (event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     const index = Math.round(offsetY / PAGE_HEIGHT);
-    if (index !== currentIndex && index >= 0 && index < events.length) {
+    if (index !== currentIndex && index >= 0 && index < orderedEvents.length) {
       setCurrentIndex(index);
     }
   };
 
   const handleMomentumScrollEnd = (event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
-    const snappedIndex = Math.max(0, Math.min(events.length - 1, Math.round(offsetY / PAGE_HEIGHT)));
+    const snappedIndex = Math.max(0, Math.min(orderedEvents.length - 1, Math.round(offsetY / PAGE_HEIGHT)));
     const snappedOffset = snappedIndex * PAGE_HEIGHT;
 
     if (snappedIndex !== currentIndex) {
@@ -422,14 +461,14 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
       }}
     >
       {/* Plays the soundtrack of the event currently in view. */}
-      <EventAudioPlayer music={events[currentIndex]?.music} muted={isMuted} playing />
+      <EventAudioPlayer music={orderedEvents[currentIndex]?.music} muted={isMuted} playing />
 
       {/* Main Content */}
       <ScrollView
         ref={scrollViewRef}
         pagingEnabled
         snapToInterval={PAGE_HEIGHT}
-        snapToOffsets={events.map((_, index) => index * PAGE_HEIGHT)}
+        snapToOffsets={orderedEvents.map((_, index) => index * PAGE_HEIGHT)}
         snapToAlignment="start"
         disableIntervalMomentum
         bounces={false}
@@ -440,7 +479,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         decelerationRate="fast"
         style={styles.scrollView}
       >
-        {events.map((event, eventIndex) => (
+        {orderedEvents.map((event, eventIndex) => (
           <View key={event.id} style={[styles.eventContainer, { width: SCREEN_WIDTH, height: PAGE_HEIGHT }]}>
             {/* Background: the organizer's own photo or video. */}
             <EventMediaBackground
@@ -497,6 +536,21 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                 <Text style={styles.description}>
                   {event.description || 'Join us for an amazing experience! 🎉'}
                 </Text>
+
+                {/*
+                  Why this event is here. A recommendation the reader cannot
+                  account for feels arbitrary; naming the reason makes the
+                  ordering legible and correctable.
+                */}
+                {reasonFor(event.id).length > 0 && (
+                  <View style={styles.reasonRow}>
+                    {reasonFor(event.id).map((reason) => (
+                      <View key={reason} style={styles.reasonChip}>
+                        <Text style={styles.reasonText}>{reason}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Bottom Info and Actions */}
@@ -697,7 +751,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
       {/* Right Side Scroll Indicators */}
       <View style={styles.rightControls}>
         <View style={styles.scrollIndicator}>
-          {events.map((_, indicatorIndex) => (
+          {orderedEvents.map((_, indicatorIndex) => (
             <TouchableOpacity
               key={indicatorIndex}
               style={[
@@ -977,6 +1031,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 96,
   },
+  reasonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  reasonChip: {
+    ...glassSurface(),
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  reasonText: { fontSize: 11.5, color: '#ffffff', fontWeight: '600' },
+
   detailsCard: {
     ...glassSurface({ strong: true }),
     borderRadius: 18,
