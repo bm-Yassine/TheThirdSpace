@@ -48,7 +48,8 @@
         {
           "locationWhenInUsePermission": "The Third Space uses your location to show events happening near you."
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

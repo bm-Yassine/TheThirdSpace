@@ -18,6 +18,7 @@ import { useAuth } from '../../lib/auth';
 import { formatEventDateLabel, formatEventTimeRange } from '../../lib/eventTime';
 import EventFilterBar from '../EventFilterBar';
 import EmptyFeed from '../EmptyFeed';
+import EventMediaBackground from '../EventMediaBackground';
 import { applyFilters, emptyFilters, isFilterActive, type EventFilters } from '../../lib/eventFilters';
 import { useNearby } from '../../lib/useNearby';
 import { byDistanceFrom, distanceToEvent, formatDistance } from '../../lib/geo';
@@ -301,13 +302,12 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
             style={styles.cardContainer}
             onPress={() => handleEventClick(event.id)}
           >
-          {/* Blurred Background Image */}
-          <Image
-            source={{ uri: event.imageUrl }}
-            style={styles.cardBackgroundImage}
-            resizeMode="cover"
-            blurRadius={3}
-          />
+          {/*
+            Background: the organizer's own media. Videos render paused here —
+            a grid decoding several at once would be wasteful, and the first
+            frame works as a poster.
+          */}
+          <EventMediaBackground event={event} active={false} style={styles.cardBackgroundImage} />
           <View style={styles.cardOverlay} />
 
           {/* Card Content */}

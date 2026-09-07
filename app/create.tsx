@@ -28,6 +28,7 @@ import { DEFAULT_MAP_CENTER, DEMO_MODE } from '../lib/config';
 import { upsertCachedEvent, invalidateEventFeedCache } from '../lib/eventFeed';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { Play } from 'lucide-react-native';
 import type { Event, EventMedia, EventMusic } from '../lib/types';
 
 export default function CreateEventScreen() {
@@ -770,7 +771,19 @@ export default function CreateEventScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewRow}>
               {formData.media.map((item) => (
                 <View key={item.uri} style={styles.mediaPreviewItem}>
-                  <Image source={{ uri: item.uri }} style={styles.mediaPreviewImage} resizeMode="cover" />
+                  {item.type === 'video' ? (
+                    // <Image> renders nothing for a video file, so a picked
+                    // video previewed as a blank tile.
+                    <View style={[styles.mediaPreviewImage, styles.videoPreview]}>
+                      <Play size={20} color="#ffffff" />
+                    </View>
+                  ) : (
+                    <Image
+                      source={{ uri: item.uri }}
+                      style={styles.mediaPreviewImage}
+                      resizeMode="cover"
+                    />
+                  )}
                   <View style={styles.mediaBadge}>
                     <Text style={styles.mediaBadgeText}>{item.type === 'video' ? 'Video' : 'Photo'}</Text>
                   </View>
@@ -880,6 +893,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   locationCard: { zIndex: 20 },
+  videoPreview: {
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   trackRow: {
     flexDirection: 'row',
     alignItems: 'center',

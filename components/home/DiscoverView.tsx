@@ -22,6 +22,7 @@ import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
 import EventAudioPlayer, { shouldStartMuted } from '../EventAudioPlayer';
 import Avatar from '../Avatar';
 import EmptyFeed from '../EmptyFeed';
+import EventMediaBackground from '../EventMediaBackground';
 import {
   ClockIcon,
   PinIcon,
@@ -439,11 +440,14 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         decelerationRate="fast"
         style={styles.scrollView}
       >
-        {events.map((event) => (
+        {events.map((event, eventIndex) => (
           <View key={event.id} style={[styles.eventContainer, { width: SCREEN_WIDTH, height: PAGE_HEIGHT }]}>
-            {/* Background Image */}
-            <Image
-              source={{ uri: event.imageUrl }}
+            {/* Background: the organizer's own photo or video. */}
+            <EventMediaBackground
+              event={event}
+              // Only the card in view plays, so the feed does not decode every
+              // video at once.
+              active={eventIndex === currentIndex}
               style={[
                 styles.backgroundImage,
                 {
@@ -451,7 +455,6 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                   height: PAGE_HEIGHT + insets.top + insets.bottom,
                 },
               ]}
-              resizeMode="cover"
             />
             <View
               style={[
