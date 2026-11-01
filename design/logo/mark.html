@@ -1,84 +1,81 @@
-<!doctype html><html><head><meta charset="utf-8"><style>
- body{margin:0;background:transparent}
- svg{display:block}
-</style></head><body>
-
-<!-- Reusable mark: three circles meeting; the shared centre is the third space. -->
-<svg id="app-icon" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:transparent}svg{display:block}</style></head><body><svg id="app-icon" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1b2136"/><stop offset="100%" stop-color="#0b0f1a"/>
-    </linearGradient>
-    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/>
-    </linearGradient>
-    <clipPath id="k1"><circle cx="512" cy="410" r="188"/></clipPath>
-    <clipPath id="k2"><circle cx="398" cy="608" r="188"/></clipPath>
+    <linearGradient id="icbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1b2136"/><stop offset="100%" stop-color="#0b0f1a"/></linearGradient>
+    <linearGradient id="ichot" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+    <clipPath id="icc0"><circle cx="512.0" cy="428.0" r="205.0"/></clipPath>
+    <clipPath id="icc1"><circle cx="609.0" cy="596.0" r="205.0"/></clipPath>
+    <clipPath id="icc2"><circle cx="415.0" cy="596.0" r="205.0"/></clipPath>
   </defs>
-  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
-  <g fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="27">
-    <circle cx="512" cy="410" r="188"/>
-    <circle cx="398" cy="608" r="188"/>
-    <circle cx="626" cy="608" r="188"/>
+  <rect width="1024" height="1024" rx="230" fill="url(#icbg)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="46">
+      <circle cx="512.0" cy="428.0" r="205.0"/>
+      <circle cx="609.0" cy="596.0" r="205.0"/>
+      <circle cx="415.0" cy="596.0" r="205.0"/>
   </g>
-  <g clip-path="url(#k1)"><g clip-path="url(#k2)">
-    <circle cx="626" cy="608" r="188" fill="url(#core)"/>
-  </g></g>
-</svg>
-
-<!-- Android adaptive foreground: mark only, inside the 66% safe zone. -->
-<svg id="android-fg" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <g clip-path="url(#icc0)"><g clip-path="url(#icc1)"><g clip-path="url(#icc2)">
+    <rect width="1024" height="1024" fill="url(#ichot)"/>
+  </g></g></g>
+</svg><svg id="android-fg" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="core2" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/>
-    </linearGradient>
-    <clipPath id="m1"><circle cx="512" cy="454" r="118"/></clipPath>
-    <clipPath id="m2"><circle cx="440" cy="578" r="118"/></clipPath>
+    <linearGradient id="afhot" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+    <clipPath id="afc0"><circle cx="512.0" cy="459.9" r="127.1"/></clipPath>
+    <clipPath id="afc1"><circle cx="572.1" cy="564.1" r="127.1"/></clipPath>
+    <clipPath id="afc2"><circle cx="451.9" cy="564.1" r="127.1"/></clipPath>
   </defs>
-  <g fill="none" stroke="#ffffff" stroke-width="17">
-    <circle cx="512" cy="454" r="118"/>
-    <circle cx="440" cy="578" r="118"/>
-    <circle cx="584" cy="578" r="118"/>
+  <g fill="none" stroke="#ffffff" stroke-width="29">
+      <circle cx="512.0" cy="459.9" r="127.1"/>
+      <circle cx="572.1" cy="564.1" r="127.1"/>
+      <circle cx="451.9" cy="564.1" r="127.1"/>
   </g>
-  <g clip-path="url(#m1)"><g clip-path="url(#m2)">
-    <circle cx="584" cy="578" r="118" fill="url(#core2)"/>
-  </g></g>
-</svg>
-
-<!-- Android adaptive background -->
-<svg id="android-bg" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <defs><linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#1b2136"/><stop offset="100%" stop-color="#0b0f1a"/>
-  </linearGradient></defs>
-  <rect width="1024" height="1024" fill="url(#bg2)"/>
-</svg>
-
-<!-- Monochrome (themed icons): flat silhouette -->
-<svg id="android-mono" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#ffffff" stroke-width="17">
-    <circle cx="512" cy="454" r="118"/>
-    <circle cx="440" cy="578" r="118"/>
-    <circle cx="584" cy="578" r="118"/>
-  </g>
-</svg>
-
-<!-- Splash: mark without the plate, drawn on the splash background colour -->
-<svg id="splash" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <g clip-path="url(#afc0)"><g clip-path="url(#afc1)"><g clip-path="url(#afc2)">
+    <rect width="1024" height="1024" fill="url(#afhot)"/>
+  </g></g></g>
+</svg><svg id="android-mono" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="core3" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/>
-    </linearGradient>
-    <clipPath id="s1"><circle cx="512" cy="424" r="176"/></clipPath>
-    <clipPath id="s2"><circle cx="405" cy="608" r="176"/></clipPath>
+    <linearGradient id="amhot" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#ffffff"/></linearGradient>
+    <clipPath id="amc0"><circle cx="512.0" cy="459.9" r="127.1"/></clipPath>
+    <clipPath id="amc1"><circle cx="572.1" cy="564.1" r="127.1"/></clipPath>
+    <clipPath id="amc2"><circle cx="451.9" cy="564.1" r="127.1"/></clipPath>
   </defs>
-  <g fill="none" stroke="#111827" stroke-width="25">
-    <circle cx="512" cy="424" r="176"/>
-    <circle cx="405" cy="608" r="176"/>
-    <circle cx="619" cy="608" r="176"/>
+  <g fill="none" stroke="#ffffff" stroke-width="29">
+      <circle cx="512.0" cy="459.9" r="127.1"/>
+      <circle cx="572.1" cy="564.1" r="127.1"/>
+      <circle cx="451.9" cy="564.1" r="127.1"/>
   </g>
-  <g clip-path="url(#s1)"><g clip-path="url(#s2)">
-    <circle cx="619" cy="608" r="176" fill="url(#core3)"/>
-  </g></g>
-</svg>
-
-</body></html>
+  <g clip-path="url(#amc0)"><g clip-path="url(#amc1)"><g clip-path="url(#amc2)">
+    <rect width="1024" height="1024" fill="url(#amhot)"/>
+  </g></g></g>
+</svg><svg id="splash" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sphot" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+    <clipPath id="spc0"><circle cx="512.0" cy="438.1" r="180.4"/></clipPath>
+    <clipPath id="spc1"><circle cx="597.4" cy="585.9" r="180.4"/></clipPath>
+    <clipPath id="spc2"><circle cx="426.6" cy="585.9" r="180.4"/></clipPath>
+  </defs>
+  <g fill="none" stroke="#111827" stroke-width="40">
+      <circle cx="512.0" cy="438.1" r="180.4"/>
+      <circle cx="597.4" cy="585.9" r="180.4"/>
+      <circle cx="426.6" cy="585.9" r="180.4"/>
+  </g>
+  <g clip-path="url(#spc0)"><g clip-path="url(#spc1)"><g clip-path="url(#spc2)">
+    <rect width="1024" height="1024" fill="url(#sphot)"/>
+  </g></g></g>
+</svg><svg id="mark-light" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="mlhot" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#ffffff"/></linearGradient>
+    <clipPath id="mlc0"><circle cx="512.0" cy="438.1" r="180.4"/></clipPath>
+    <clipPath id="mlc1"><circle cx="597.4" cy="585.9" r="180.4"/></clipPath>
+    <clipPath id="mlc2"><circle cx="426.6" cy="585.9" r="180.4"/></clipPath>
+  </defs>
+  <g fill="none" stroke="#ffffff" stroke-width="40">
+      <circle cx="512.0" cy="438.1" r="180.4"/>
+      <circle cx="597.4" cy="585.9" r="180.4"/>
+      <circle cx="426.6" cy="585.9" r="180.4"/>
+  </g>
+  <g clip-path="url(#mlc0)"><g clip-path="url(#mlc1)"><g clip-path="url(#mlc2)">
+    <rect width="1024" height="1024" fill="url(#mlhot)"/>
+  </g></g></g>
+</svg><svg id="android-bg" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="abg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1b2136"/><stop offset="100%" stop-color="#0b0f1a"/></linearGradient></defs>
+  <rect width="1024" height="1024" fill="url(#abg)"/>
+</svg></body></html>

@@ -62,23 +62,20 @@ export default function Avatar({
   const initials = initialsFor(name);
 
   /**
-   * The three circles sit on an equilateral arrangement whose bounding box is
-   * centred in the tile (verified: x 19.7–80.3, y 21.0–78.5, both midpoints
-   * 50). The previous placement was not equilateral and was drawn around
-   * y=50, which put the mass low and left and read as badly centred. The tile
-   * is also no longer rotated per user — rotating a three-fold shape by an
-   * arbitrary angle shifts its bounding box, and the per-user variety already
-   * comes from the palette and the initials.
+   * The mark, matching the app icon exactly so the brand does not drift
+   * between the icon and the avatars: three circles on an equilateral
+   * arrangement (r 20, d 10.9 about a centre at y 52.7 in a 100 viewBox),
+   * which places the bounding box dead centre in the tile.
+   *
+   * Rings only here — the icon fills the shared middle, but behind initials
+   * that fill would fight the letters.
    */
-  const MARK_CENTRE_Y = 53;
-  const MARK_DISTANCE = 13;
-  const MARK_RADIUS = 19;
-
+  const MARK_RADIUS = 20;
   const markCentres = [-90, 30, 150].map((degrees) => {
     const radians = (degrees * Math.PI) / 180;
     return {
-      cx: 50 + MARK_DISTANCE * Math.cos(radians),
-      cy: MARK_CENTRE_Y + MARK_DISTANCE * Math.sin(radians),
+      cx: 50 + 10.9 * Math.cos(radians),
+      cy: 52.7 + 10.9 * Math.sin(radians),
     };
   });
 
@@ -104,7 +101,7 @@ export default function Avatar({
               r={MARK_RADIUS}
               fill="none"
               stroke="#fff"
-              strokeWidth="3.4"
+              strokeWidth="4.5"
             />
           ))}
         </G>

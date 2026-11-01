@@ -72,23 +72,30 @@ export default function EmptyFeed({
   return (
     <View style={[styles.wrap, isDark ? styles.wrapDark : styles.wrapLight]}>
       <Animated.View style={{ opacity: enter, transform: [{ translateY }] }}>
-        <Svg width={84} height={84} viewBox="0 0 100 100" style={styles.mark}>
+        {/* The app mark, at the same proportions as the icon. */}
+        <Svg width={92} height={92} viewBox="0 0 100 100" style={styles.mark}>
           <Defs>
+            <ClipPath id="ef0">
+              <Circle cx="50" cy="41.8" r="20" />
+            </ClipPath>
             <ClipPath id="ef1">
-              <Circle cx="50" cy="36" r="24" />
+              <Circle cx="59.5" cy="58.2" r="20" />
             </ClipPath>
             <ClipPath id="ef2">
-              <Circle cx="36" cy="60" r="24" />
+              <Circle cx="40.5" cy="58.2" r="20" />
             </ClipPath>
           </Defs>
-          <G fill="none" stroke={stroke} strokeWidth="3.4">
-            <Circle cx="50" cy="36" r="24" />
-            <Circle cx="36" cy="60" r="24" />
-            <Circle cx="64" cy="60" r="24" />
+          <G fill="none" stroke={stroke} strokeWidth="4.5">
+            <Circle cx="50" cy="41.8" r="20" />
+            <Circle cx="59.5" cy="58.2" r="20" />
+            <Circle cx="40.5" cy="58.2" r="20" />
           </G>
-          <G clipPath="url(#ef1)">
-            <G clipPath="url(#ef2)">
-              <Circle cx="64" cy="60" r="24" fill="#6366f1" />
+          {/* The shared middle, lit — the third space itself. */}
+          <G clipPath="url(#ef0)">
+            <G clipPath="url(#ef1)">
+              <G clipPath="url(#ef2)">
+                <Circle cx="50" cy="50" r="50" fill="#6366f1" />
+              </G>
             </G>
           </G>
         </Svg>
