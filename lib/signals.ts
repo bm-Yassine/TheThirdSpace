@@ -19,7 +19,14 @@ import { DEMO_MODE } from './config';
 export type SignalAction = 'impression' | 'open' | 'favorite' | 'unfavorite' | 'join' | 'leave';
 
 /** Impressions are frequent; batching keeps this off the critical path. */
-let pending: { eventId: string; action: SignalAction; score?: number; at: number }[] = [];
+let pending: {
+  eventId: string;
+  action: SignalAction;
+  score?: number;
+  /** Per-signal values at the moment of the impression. */
+  features?: Record<string, number>;
+  at: number;
+}[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 const FLUSH_AFTER_MS = 8000;
@@ -44,11 +51,22 @@ const flush = async () => {
   }
 };
 
-export const recordSignal = (eventId: string, action: SignalAction, score?: number) => {
+export const recordSignal = (
+  eventId: string,
+  action: SignalAction,
+  score?: number,
+  /**
+   * The feature values behind the score. Required to ever fit the weights: a
+   * composite score says nothing about which signal earned it, so without
+   * these the weights can only ever be guesses, and the data cannot be
+   * recovered retrospectively.
+   */
+  features?: Record<string, number>
+) => {
   // Demo mode has no user and no database; logging there would be noise.
   if (DEMO_MODE || !auth.currentUser) return;
 
-  pending.push({ eventId: String(eventId), action, score, at: Date.now() });
+  pending.push({ eventId: String(eventId), action, score, features, at: Date.now() });
 
   if (pending.length >= MAX_BATCH) {
     flush();

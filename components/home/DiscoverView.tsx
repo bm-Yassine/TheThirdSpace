@@ -204,8 +204,8 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   useEffect(() => {
     const current = orderedEvents[currentIndex];
     if (!current) return;
-    const score = ranked.find((r) => String(r.event.id) === String(current.id))?.score;
-    recordSignal(String(current.id), 'impression', score);
+    const scored = ranked.find((r) => String(r.event.id) === String(current.id));
+    recordSignal(String(current.id), 'impression', scored?.score, scored?.features);
   }, [currentIndex, orderedEvents, ranked]);
 
   useEffect(() => () => {

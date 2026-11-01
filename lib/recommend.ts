@@ -31,15 +31,49 @@ export type RecommendContext = {
   weather?: { condition: 'good' | 'poor'; withinDays: number } | null;
 };
 
+/** The per-signal values behind a score, each 0..1. */
+export type FeatureVector = {
+  interest: number;
+  proximity: number;
+  timing: number;
+  socialProof: number;
+  reputation: number;
+  priceFit: number;
+  novelty: number;
+};
+
+export const FEATURE_KEYS: (keyof FeatureVector)[] = [
+  'interest',
+  'proximity',
+  'timing',
+  'socialProof',
+  'reputation',
+  'priceFit',
+  'novelty',
+];
+
 export type ScoredEvent = {
   event: Event;
   score: number;
   /** Human-readable, in the order they contributed most. */
   reasons: string[];
+  /**
+   * The raw signal values. Logged with each impression so the weights can
+   * eventually be fitted against real outcomes — a single composite score
+   * carries no information about which signal earned it, so without this the
+   * weights could never be anything but guesses.
+   */
+  features: FeatureVector;
 };
 
-/** Each signal returns 0..1. Weights are relative, not probabilities. */
-const WEIGHTS = {
+/**
+ * Each signal returns 0..1; weights are relative, not probabilities.
+ *
+ * These are a starting hypothesis. `scripts/fit-weights.mjs` fits them
+ * against logged outcomes once enough signals exist, and `setWeights` lets a
+ * fitted set be applied without shipping a release.
+ */
+export const DEFAULT_WEIGHTS: FeatureVector = {
   interest: 3.0,
   proximity: 2.2,
   timing: 1.6,
@@ -47,7 +81,16 @@ const WEIGHTS = {
   reputation: 0.9,
   priceFit: 0.7,
   novelty: 0.6,
-} as const;
+};
+
+let WEIGHTS: FeatureVector = { ...DEFAULT_WEIGHTS };
+
+/** Applies a fitted set. Partial overrides keep the defaults for the rest. */
+export const setWeights = (next: Partial<FeatureVector>) => {
+  WEIGHTS = { ...DEFAULT_WEIGHTS, ...next };
+};
+
+export const getWeights = (): FeatureVector => ({ ...WEIGHTS });
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -216,6 +259,16 @@ export function scoreEvent(event: Event, context: RecommendContext): ScoredEvent
   const raw = contributions.reduce((total, c) => total + c.value, 0);
   const penalty = weatherPenalty(event, context.weather);
 
+  const features: FeatureVector = {
+    interest: interest.score,
+    proximity: proximity.score,
+    timing,
+    socialProof: social,
+    reputation,
+    priceFit: price,
+    novelty,
+  };
+
   const reasons = contributions
     .filter((c) => c.reason)
     .sort((a, b) => b.value - a.value)
@@ -224,7 +277,7 @@ export function scoreEvent(event: Event, context: RecommendContext): ScoredEvent
 
   if (penalty > 0) reasons.push('Outdoors — check the forecast');
 
-  return { event, score: Math.max(0, raw - penalty), reasons };
+  return { event, score: Math.max(0, raw - penalty), reasons, features };
 }
 
 /** Ranks a feed, highest first. */
