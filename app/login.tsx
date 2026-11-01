@@ -53,7 +53,9 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
         );
       }
 
-      router.replace('/home');
+      // A new account goes through onboarding so the feed has something to
+      // rank on; an existing one has already been through it.
+      router.replace(mode === 'signup' ? '/onboarding' : '/home');
     } catch (e: any) {
       console.log('Auth error:', e); // Debug log
       const errorMessage = mapAuthError(e?.code) || `Authentication failed: ${e?.message || 'Unknown error'}`;

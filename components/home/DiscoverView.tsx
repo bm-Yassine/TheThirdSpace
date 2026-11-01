@@ -24,6 +24,7 @@ import Avatar from '../Avatar';
 import EmptyFeed from '../EmptyFeed';
 import EventMediaBackground from '../EventMediaBackground';
 import { rankEvents } from '../../lib/recommend';
+import { expandInterests } from '../../lib/taxonomy';
 import { recordSignal, flushSignals } from '../../lib/signals';
 import { useNearby } from '../../lib/useNearby';
 import {
@@ -93,7 +94,9 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
   const ranked = useMemo(
     () =>
       rankEvents(events, {
-        interests: profile?.interests || [],
+        // Widened through the taxonomy: someone who picked "Music" should
+        // match an event tagged only "Live Music".
+        interests: expandInterests(profile?.interests || []),
         coords: nearby.coords,
         now: new Date(),
         seenEventIds: undefined,

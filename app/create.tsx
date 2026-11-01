@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,8 @@ import EventScheduleField, {
   type EventSchedule,
 } from '../components/EventScheduleField';
 import { combineDateAndTime, getEventStart } from '../lib/eventTime';
+import { EVENT_TYPES, suggestTags } from '../lib/taxonomy';
+import { loadEventDefaults, saveEventDefaults } from '../lib/eventDefaults';
 import LocationField, { type LocationValue } from '../components/LocationField';
 import { uploadEventMedia, uploadEventAudio, isRemoteUri, type UploadProgress } from '../lib/storage';
 import { DEFAULT_MAP_CENTER, DEMO_MODE } from '../lib/config';
@@ -81,6 +83,7 @@ export default function CreateEventScreen() {
   const [loadedEvent, setLoadedEvent] = useState<any | null>(null);
   const [location, setLocation] = useState<LocationValue>({ label: '' });
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
 
   // Waits for the auth provider to settle before deciding the user is signed
   // out — a synchronous currentUser read is null during web session restore.
@@ -115,6 +118,42 @@ export default function CreateEventScreen() {
       setLoading(false);
     }
   }, [initializing, user, authProfile, loadingProfile]);
+
+  /**
+   * Creating again reuses last time's venue, capacity, price and duration.
+   * Only on create: in edit mode the stored event is the source of truth, and
+   * overwriting it with stale defaults would quietly corrupt someone's event.
+   */
+  useEffect(() => {
+    if (isEditing || prefilled || !user) return;
+
+    let active = true;
+    loadEventDefaults().then((defaults) => {
+      if (!active || !defaults) {
+        if (active) setPrefilled(true);
+        return;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        type: prev.type || defaults.type || '',
+        minPeople: prev.minPeople || defaults.minPeople || '',
+        maxPeople: prev.maxPeople || defaults.maxPeople || '',
+        cost: prev.cost || defaults.cost || '',
+        openToAll: defaults.openToAll ?? prev.openToAll,
+      }));
+
+      if (defaults.location?.label) setLocation(defaults.location);
+      if (defaults.durationMinutes) {
+        setSchedule((prev) => ({ ...prev, durationMinutes: defaults.durationMinutes! }));
+      }
+      setPrefilled(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isEditing, prefilled, user]);
 
   // In edit mode, hydrate the form from the stored event.
   useEffect(() => {
@@ -185,18 +224,8 @@ export default function CreateEventScreen() {
     };
   }, [isEditing, editingEventId, user]);
 
-  const activityTypes = [
-    'Sports',
-    'Arts & Culture',
-    'Food & Drink',
-    'Health & Wellness',
-    'Education',
-    'Technology',
-    'Outdoor',
-    'Social',
-    'Music',
-    'Other',
-  ];
+  const activityTypes = EVENT_TYPES;
+
 
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({
@@ -204,6 +233,28 @@ export default function CreateEventScreen() {
       [field]: value,
     }));
   };
+
+  /**
+   * Tags worth offering, inferred from the title, description and type, minus
+   * whatever is already chosen. Requiring three hand-typed tags was the
+   * slowest part of creating an event, and hand-typed tags rarely matched the
+   * vocabulary the feed ranks against.
+   */
+  const suggestedTags = useMemo(
+    () =>
+      suggestTags({
+        title: formData.title,
+        description: formData.description,
+        type: formData.type,
+        limit: 10,
+      }).filter((tag) => !formData.tags.includes(tag)),
+    [formData.title, formData.description, formData.type, formData.tags]
+  );
+
+  const addSuggestedTag = (tag: string) =>
+    setFormData((prev) =>
+      prev.tags.includes(tag) ? prev : { ...prev, tags: [...prev.tags, tag] }
+    );
 
   const addTag = () => {
     if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
@@ -470,6 +521,17 @@ export default function CreateEventScreen() {
 
       const eventId = await dataService.createEvent(eventData);
 
+      // Remembered for next time, so a recurring event is near-instant.
+      saveEventDefaults({
+        type: formData.type,
+        location,
+        minPeople: formData.minPeople,
+        maxPeople: formData.maxPeople,
+        cost: formData.cost,
+        openToAll: formData.openToAll,
+        durationMinutes: schedule.durationMinutes,
+      });
+
       const createdEvent: Event = {
         ...eventData,
         id: eventId,
@@ -667,6 +729,24 @@ export default function CreateEventScreen() {
         {/* Tags */}
         <View style={styles.formCard}>
           <Text style={styles.label}>Tags * (minimum 3)</Text>
+
+          {suggestedTags.length > 0 && (
+            <View style={styles.suggestBlock}>
+              <Text style={styles.suggestLabel}>Suggested — tap to add</Text>
+              <View style={styles.tagsContainer}>
+                {suggestedTags.map((tag) => (
+                  <TouchableOpacity
+                    key={tag}
+                    style={styles.suggestTag}
+                    onPress={() => addSuggestedTag(tag)}
+                  >
+                    <Text style={styles.suggestTagText}>+ {tag}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           <View style={styles.row}>
             <View style={styles.flex1}>
               <TextInput
@@ -893,6 +973,19 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   locationCard: { zIndex: 20 },
+  suggestBlock: { marginBottom: 12 },
+  suggestLabel: { fontSize: 12, fontWeight: '700', color: '#6b7280', marginBottom: 7 },
+  suggestTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+    backgroundColor: '#eef2ff',
+  },
+  suggestTagText: { fontSize: 12.5, color: '#4338ca', fontWeight: '600' },
   videoPreview: {
     backgroundColor: '#111827',
     alignItems: 'center',
