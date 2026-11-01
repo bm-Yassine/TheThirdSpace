@@ -217,6 +217,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // -------------------------------------------------------- music library
+    // The curated, licence-cleared catalogue. Readable by anyone so the
+    // picker works before sign-in; written only by the Admin SDK, which
+    // bypasses these rules — tracks are added with scripts/add-music-track.mjs
+    // so licence and attribution are validated before anything is stored.
+    match /musicTracks/{trackId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // ------------------------------------------------------------- payments
     // Written by the client on checkout and by the Stripe webhook via the
     // Admin SDK, which bypasses these rules entirely.

@@ -24,6 +24,8 @@ import EventScheduleField, {
 import { combineDateAndTime, getEventStart } from '../lib/eventTime';
 import { EVENT_TYPES, suggestTags } from '../lib/taxonomy';
 import { loadEventDefaults, saveEventDefaults } from '../lib/eventDefaults';
+import MusicPicker from '../components/MusicPicker';
+import { creditLine } from '../lib/musicLicence';
 import LocationField, { type LocationValue } from '../components/LocationField';
 import { uploadEventMedia, uploadEventAudio, isRemoteUri, type UploadProgress } from '../lib/storage';
 import { DEFAULT_MAP_CENTER, DEMO_MODE } from '../lib/config';
@@ -84,6 +86,8 @@ export default function CreateEventScreen() {
   const [location, setLocation] = useState<LocationValue>({ label: '' });
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [prefilled, setPrefilled] = useState(false);
+  const [musicPickerOpen, setMusicPickerOpen] = useState(false);
+  const [musicCredit, setMusicCredit] = useState<string | null>(null);
 
   // Waits for the auth provider to settle before deciding the user is signed
   // out — a synchronous currentUser read is null during web session restore.
@@ -818,26 +822,41 @@ export default function CreateEventScreen() {
             keyboardType="numeric"
           />
           {formData.musicUri ? (
-            <View style={styles.trackRow}>
-              <Text style={styles.trackName} numberOfLines={1}>
-                {formData.musicFileName || 'Track attached'}
-              </Text>
-              <TouchableOpacity onPress={removeAudioTrack} hitSlop={8}>
-                <Text style={styles.trackRemove}>Remove</Text>
-              </TouchableOpacity>
+            <View>
+              <View style={styles.trackRow}>
+                <Text style={styles.trackName} numberOfLines={1}>
+                  {formData.musicFileName || formData.musicTitle || 'Track attached'}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    removeAudioTrack();
+                    setMusicCredit(null);
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.trackRemove}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+              {/* A CC-BY credit has to travel with the track. */}
+              {!!musicCredit && <Text style={styles.creditNote}>{musicCredit}</Text>}
             </View>
           ) : (
-            <TouchableOpacity
-              style={[styles.mediaPickerButton, styles.inputSpacing]}
-              onPress={pickAudioTrack}
-            >
-              <Text style={styles.mediaPickerButtonText}>Attach an audio file</Text>
-            </TouchableOpacity>
+            <View style={styles.inputSpacing}>
+              <TouchableOpacity
+                style={styles.libraryButton}
+                onPress={() => setMusicPickerOpen(true)}
+              >
+                <Text style={styles.libraryButtonText}>Browse the music library</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.ownFileButton} onPress={pickAudioTrack}>
+                <Text style={styles.ownFileButtonText}>Or use my own file</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           <Text style={styles.helperText}>
-            The track plays behind your event in the Discover feed. Upload music you
-            have the rights to use — a copyright-free library is coming.
+            The track plays behind your event in the Discover feed. Library tracks are
+            cleared for use; if you upload your own, make sure you have the rights.
           </Text>
         </View>
 
@@ -897,6 +916,21 @@ export default function CreateEventScreen() {
       </ScrollView>
       
       {/* Floating Navigation */}
+      <MusicPicker
+        visible={musicPickerOpen}
+        onClose={() => setMusicPickerOpen(false)}
+        onSelect={(track) => {
+          setFormData((prev) => ({
+            ...prev,
+            musicUri: track.uri,
+            musicFileName: track.title,
+            musicTitle: track.title,
+            musicArtist: track.artist,
+          }));
+          setMusicCredit(creditLine(track));
+        }}
+      />
+
       <FloatingNavigation activeScreen="create" tone="dark" />
     </View>
   );
@@ -973,6 +1007,17 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   locationCard: { zIndex: 20 },
+  libraryButton: {
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  libraryButtonText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
+  ownFileButton: { paddingVertical: 11, alignItems: 'center' },
+  ownFileButtonText: { fontSize: 13, fontWeight: '600', color: '#4f46e5' },
+  creditNote: { fontSize: 11, color: '#6b7280', marginTop: 6, fontStyle: 'italic' },
+
   suggestBlock: { marginBottom: 12 },
   suggestLabel: { fontSize: 12, fontWeight: '700', color: '#6b7280', marginBottom: 7 },
   suggestTag: {
