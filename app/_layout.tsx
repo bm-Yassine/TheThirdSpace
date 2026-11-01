@@ -34,6 +34,10 @@ export default function RootLayout() {
               <Stack.Screen name="chats" options={{ headerShown: false }} />
               <Stack.Screen name="profile" options={{ headerShown: false }} />
               <Stack.Screen
+                name="notifications"
+                options={{ headerShown: false, animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
                 name="activity_detail"
                 options={{ headerShown: false, animation: 'slide_from_right' }}
               />

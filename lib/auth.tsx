@@ -10,6 +10,7 @@ import type { User } from 'firebase/auth';
 import { authService, dataService, type UserProfile } from '../Backend/firebase';
 import { DEMO_MODE } from './config';
 import { setBlockedUserIds } from './eventFeed';
+import { registerForPush } from './notifications';
 import { DEMO_UID, demoState } from './demoData';
 
 type AuthState = {
@@ -69,6 +70,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // organizer's events never flash up.
         const blocked = await dataService.getBlockedUserIds().catch(() => []);
         setBlockedUserIds(blocked);
+
+        // Push token, if this platform and this user allow it. Returns null
+        // on web, on a simulator, or when permission is refused — all normal
+        // states, so nothing is retried or surfaced.
+        registerForPush()
+          .then((token) => (token ? dataService.savePushToken(token) : undefined))
+          .catch(() => undefined);
       } catch {
         setProfile(null);
       } finally {

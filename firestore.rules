@@ -68,6 +68,27 @@ service cloud.firestore {
         allow read, write: if isUser(userId);
       }
 
+      // Notifications. The owner reads and marks them read; any signed-in
+      // user may create one, because the person triggering a notification is
+      // someone else — the organizer approving you, or whoever messaged you.
+      // Creation is constrained to the known shape so the inbox cannot be
+      // used as a general-purpose message injector.
+      match /notifications/{notificationId} {
+        allow read, update, delete: if isUser(userId);
+        allow create: if isSignedIn()
+                      && request.resource.data.kind is string
+                      && request.resource.data.title is string
+                      && request.resource.data.body is string
+                      && request.resource.data.title.size() <= 120
+                      && request.resource.data.body.size() <= 300;
+      }
+
+      // Expo push tokens for this user's devices. Owner-only; the server
+      // reads them through the Admin SDK, which bypasses these rules.
+      match /pushTokens/{tokenId} {
+        allow read, write: if isUser(userId);
+      }
+
       // The user's mirror of their participation. The owner manages it, and
       // the organizer of the event may update its status to record an
       // approval, decline or waitlist promotion.

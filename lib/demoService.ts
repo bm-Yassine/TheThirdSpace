@@ -339,6 +339,45 @@ export const demoService = {
     return delay('demo-report');
   },
 
+  async notify() {
+    return delay(undefined);
+  },
+
+  subscribeToNotifications(onChange: (items: any[]) => void) {
+    // A couple of plausible entries so the inbox is explorable in demo mode.
+    onChange([
+      {
+        id: 'demo-n1',
+        kind: 'request_approved',
+        title: "You're in",
+        body: 'The organizer approved you for Rooftop Jazz & Wine.',
+        route: '/activity_detail',
+        params: { eventId: '6' },
+        readAt: null,
+        createdAt: new Date(Date.now() - 1000 * 60 * 24),
+      },
+      {
+        id: 'demo-n2',
+        kind: 'new_message',
+        title: 'Priya Raman',
+        body: 'Perfect, see you at 7:30!',
+        route: '/chats',
+        params: { conversationId: 'demo-conv-1' },
+        readAt: new Date(Date.now() - 1000 * 60 * 60 * 5),
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6),
+      },
+    ]);
+    return () => undefined;
+  },
+
+  async markNotificationsRead() {
+    return delay(undefined);
+  },
+
+  async savePushToken() {
+    return delay(undefined);
+  },
+
   async blockUser() {
     return delay(undefined);
   },

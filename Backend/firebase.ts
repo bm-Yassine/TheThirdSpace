@@ -48,7 +48,7 @@ import {
 import { getStorage, ref as storageRef, listAll, deleteObject } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mockEvents } from '../lib/events';
-import { USE_MOCK_EVENTS, DEMO_MODE } from '../lib/config';
+import { USE_MOCK_EVENTS, DEMO_MODE, PAYMENTS_API_BASE_URL } from '../lib/config';
 import { demoService } from '../lib/demoService';
 import { withTimeout } from '../lib/async';
 import {
@@ -57,6 +57,8 @@ import {
   DEFAULT_EVENT_DURATION_MINUTES,
 } from '../lib/eventTime';
 import type { Attendee, AttendeeStatus, Rating, ReputationSummary } from '../lib/types';
+import type { AppNotification, NotificationKind } from '../lib/notifications';
+import { describeNotification } from '../lib/notifications';
 import {
   counterChanges,
   decideJoinOutcome,
@@ -620,6 +622,17 @@ const firestoreDataService = {
             { status: 'declined', reason: 'cancelled', updatedAt: new Date() },
             { merge: true }
           );
+
+          const copy = describeNotification('event_cancelled', {
+            eventTitle: eventData.title,
+            reason: reason?.trim(),
+          });
+          await this.notify(participant.uid, {
+            ...copy,
+            kind: 'event_cancelled',
+            route: '/activity_detail',
+            params: { eventId },
+          });
         } catch (error) {
           // One failed notification must not abort the cancellation.
           console.warn(`Could not notify ${participant.uid} of cancellation:`, error);
@@ -909,6 +922,18 @@ const firestoreDataService = {
       return true;
     });
 
+    if (promoted) {
+      const copy = describeNotification('waitlist_promoted', {
+        eventTitle: (eventData as any).title,
+      });
+      await this.notify(next.uid, {
+        ...copy,
+        kind: 'waitlist_promoted',
+        route: '/activity_detail',
+        params: { eventId },
+      });
+    }
+
     return promoted ? next.uid : null;
   },
 
@@ -934,7 +959,9 @@ const firestoreDataService = {
     const participantRef = doc(db, 'events', eventId, 'participants', participantUid);
     const commitmentRef = doc(db, 'users', participantUid, 'commitments', eventId);
 
-    await runTransaction(db, async (transaction) => {
+    // Returned from the transaction rather than captured in an outer
+    // variable, which TypeScript cannot narrow across the closure.
+    const notifyOf = await runTransaction(db, async (transaction) => {
       const eventSnap = await transaction.get(eventRef);
       if (!eventSnap.exists()) throw new Error('Event not found');
 
@@ -947,7 +974,7 @@ const firestoreDataService = {
       if (!participantSnap.exists()) throw new Error('Participant not found');
 
       const previousStatus = normalizeStatus((participantSnap.data() as any).status);
-      if (previousStatus === nextStatus) return;
+      if (previousStatus === nextStatus) return null;
 
       if (nextStatus === 'confirmed') {
         const cap = Number(eventData.maxAttendees || 0);
@@ -974,7 +1001,26 @@ const firestoreDataService = {
         ...counterDeltaFor(previousStatus, nextStatus),
         updatedAt: now,
       });
+
+      return {
+        kind: (nextStatus === 'confirmed'
+          ? 'request_approved'
+          : 'request_declined') as NotificationKind,
+        eventTitle: eventData.title as string | undefined,
+      };
     });
+
+    // Outside the transaction: a failed notification must not roll back the
+    // decision the organizer just made.
+    if (notifyOf) {
+      const copy = describeNotification(notifyOf.kind, { eventTitle: notifyOf.eventTitle });
+      await this.notify(participantUid, {
+        ...copy,
+        kind: notifyOf.kind,
+        route: '/activity_detail',
+        params: { eventId },
+      });
+    }
   },
 
   /** Marks a participant's payment as settled and moves them out of the payment lane. */
@@ -1207,6 +1253,23 @@ const firestoreDataService = {
       lastMessageSenderId: user.uid,
       updatedAt: new Date(),
     });
+
+    const recipient = participantIds.find((id) => id !== user.uid);
+    if (recipient) {
+      const me = await this.getUserProfile(user.uid).catch(() => null);
+      const copy = describeNotification('new_message', {
+        personName: me?.displayName || 'New message',
+        // The preview is trimmed: a notification should say enough to decide
+        // whether to open it, not reproduce the whole message.
+        reason: trimmedText.length > 90 ? `${trimmedText.slice(0, 90)}…` : trimmedText,
+      });
+      await this.notify(recipient, {
+        ...copy,
+        kind: 'new_message',
+        route: '/chats',
+        params: { conversationId },
+      });
+    }
 
     return messageRef.id;
   },
@@ -1582,6 +1645,121 @@ const firestoreDataService = {
     //    asks for the password first.
     step('Closing your account');
     await authService.deleteAuthAccount();
+  },
+
+  // ---------------------------------------------------------------------------
+  // Notifications
+  //
+  // A record is written for every notable event. The record is what the
+  // in-app inbox reads, and works on every platform; push delivery is layered
+  // on top for native only.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Writes a notification for someone.
+   * Never throws: a failed notification must not roll back the action that
+   * caused it, such as approving an attendee.
+   */
+  async notify(
+    targetUid: string,
+    input: {
+      kind: NotificationKind;
+      title: string;
+      body: string;
+      route?: string;
+      params?: Record<string, string>;
+    }
+  ): Promise<void> {
+    try {
+      const ref = doc(collection(db, 'users', targetUid, 'notifications'));
+      await setDoc(ref, {
+        id: ref.id,
+        kind: input.kind,
+        title: input.title,
+        body: input.body,
+        route: input.route || null,
+        params: input.params || null,
+        readAt: null,
+        createdAt: new Date(),
+      });
+    } catch (error) {
+      console.warn(`Could not notify ${targetUid}:`, error);
+    }
+
+    // Push delivery is a best-effort layer on top of the record. It reaches
+    // iOS and Android only; on web the inbox is the delivery mechanism.
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      await fetch(`${PAYMENTS_API_BASE_URL}/send-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          targetUid,
+          title: input.title,
+          body: input.body,
+          data: { route: input.route, ...(input.params || {}) },
+        }),
+      });
+    } catch {
+      // No endpoint in local dev, and a failed push must never surface.
+    }
+  },
+
+  /** Live inbox, newest first. */
+  subscribeToNotifications(
+    onChange: (items: AppNotification[]) => void,
+    onError?: (error: Error) => void
+  ): Unsubscribe {
+    const user = auth.currentUser;
+    if (!user) throw new Error('User not authenticated');
+
+    return onSnapshot(
+      collection(db, 'users', user.uid, 'notifications'),
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((snap) => ({ ...(snap.data() as any), id: snap.id }) as AppNotification)
+          .sort((a, b) => dateToMillis(b.createdAt) - dateToMillis(a.createdAt))
+          .slice(0, 100);
+        onChange(items);
+      },
+      (error) => onError?.(error)
+    );
+  },
+
+  async markNotificationsRead(ids?: string[]): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const base = collection(db, 'users', user.uid, 'notifications');
+    const targets = ids?.length
+      ? ids
+      : (await getDocs(query(base, where('readAt', '==', null)))).docs.map((d) => d.id);
+
+    await Promise.all(
+      targets.map((id) =>
+        setDoc(doc(base, id), { readAt: new Date() }, { merge: true }).catch(() => undefined)
+      )
+    );
+  },
+
+  /**
+   * Stores the device's push token on the profile so the server can reach it.
+   * Tokens are per-device, so they are kept as a map keyed by token rather
+   * than a single field that devices would overwrite from each other.
+   */
+  async savePushToken(token: string): Promise<void> {
+    const user = auth.currentUser;
+    if (!user || !token) return;
+    try {
+      await setDoc(
+        doc(db, 'users', user.uid, 'pushTokens', token.replace(/[^\w-]/g, '_')),
+        { token, platform: Platform.OS, updatedAt: new Date() },
+        { merge: true }
+      );
+    } catch (error) {
+      console.warn('Could not save push token:', error);
+    }
   },
 
   async recordPayment(eventId: string, amount: number, method: 'stripe' | 'card' | 'paypal', status: 'pending' | 'completed' = 'completed') {

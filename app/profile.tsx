@@ -14,6 +14,7 @@ import { Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadProfilePhoto } from '../lib/storage';
 import DeleteAccountDialog from '../components/DeleteAccountDialog';
+import NotificationBell from '../components/NotificationBell';
 import Avatar from '../components/Avatar';
 import QualityBadge from '../components/QualityBadge';
 import { authService } from '../Backend/firebase';
@@ -257,7 +258,10 @@ export default function ProfileScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.h1}>Profile</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.h1}>Profile</Text>
+          <NotificationBell />
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
           {TABS.map((tab) => (
             <Pressable
@@ -637,6 +641,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e5e7eb',
   },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   h1: { fontSize: 26, fontWeight: '700', color: '#111827' },
   h2: { fontSize: 18, fontWeight: '600', color: '#111827' },
   muted: { fontSize: 13, color: '#6b7280' },

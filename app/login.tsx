@@ -5,9 +5,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { authService, dataService } from '../Backend/firebase';
-
-/** Google OAuth needs real iOS/Android/web client IDs before this is shown. */
-const GOOGLE_SIGN_IN_READY = false;
+import { useGoogleSignIn } from '../lib/googleAuth';
 
 export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -65,11 +63,21 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
     }
   };
 
+  const google = useGoogleSignIn({
+    onSuccess: (isNewUser) => {
+      setBusy(false);
+      router.replace(isNewUser ? '/onboarding' : '/home');
+    },
+    onError: (message) => {
+      setBusy(false);
+      setErr(message);
+    },
+  });
+
   const handleGoogleSignIn = () => {
-    Alert.alert(
-      'Coming Soon',
-      'Google sign-in will be available soon after app verification is completed.'
-    );
+    setErr(null);
+    setBusy(true);
+    google.signIn();
   };
 
   const forgot = async () => {
@@ -109,14 +117,17 @@ export default function LoginScreen({ onSuccess }: { onSuccess?: () => void }) {
           </Text>
 
           {/*
-            Google sign-in is hidden until real OAuth client IDs exist. A
-            prominent, permanently disabled "(Soon)" button is the first thing a
-            new user sees, and a dead primary action reads as a broken app.
-            Flip GOOGLE_SIGN_IN_READY once the client IDs are configured.
+            Shown only when a client ID exists for this platform. A dead
+            primary action is the worst thing a new user can meet, so the
+            button is absent rather than disabled when Google is unconfigured.
           */}
-          {GOOGLE_SIGN_IN_READY && (
+          {google.available && (
             <>
-              <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn}>
+              <TouchableOpacity
+                style={[styles.googleButton, (!google.ready || busy) && { opacity: 0.6 }]}
+                onPress={handleGoogleSignIn}
+                disabled={!google.ready || busy}
+              >
                 <Image
                   source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
                   style={styles.googleIcon}
