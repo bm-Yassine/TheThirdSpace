@@ -112,6 +112,9 @@ export const renderEventPreview = ({
   const image = safeImageUrl(event?.imageUrl) ?? safeImageUrl(fallbackImage);
   const target = appUrlForEvent(origin, eventId);
   const canonical = `${origin}/e/${encodeURIComponent(eventId)}`;
+  // The fallback title already names the site; suffixing it would read
+  // "An event on The Third Space · The Third Space".
+  const documentTitle = title === FALLBACK_TITLE ? title : `${title} · ${SITE_NAME}`;
 
   const e = escapeHtml;
 
@@ -120,7 +123,7 @@ export const renderEventPreview = ({
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${e(title)} · ${e(SITE_NAME)}</title>
+<title>${e(documentTitle)}</title>
 <link rel="canonical" href="${e(canonical)}">
 <meta name="description" content="${e(description)}">
 

@@ -127,6 +127,17 @@ describe('renderEventPreview', () => {
     assert.ok(html.includes('summary_large_image'));
   });
 
+  it('suffixes the document title with the site name', () => {
+    const html = renderEventPreview({ event, eventId: 'abc123', origin: ORIGIN });
+    assert.ok(html.includes('<title>Sunset picnic · The Third Space</title>'));
+  });
+
+  it('does not repeat the site name on the fallback title', () => {
+    const html = renderEventPreview({ eventId: 'missing', origin: ORIGIN });
+    assert.ok(html.includes('<title>An event on The Third Space</title>'));
+    assert.ok(!html.includes('The Third Space · The Third Space'));
+  });
+
   it('points the crawler and the reader at the right URLs', () => {
     const html = renderEventPreview({ event, eventId: 'abc123', origin: ORIGIN });
 
