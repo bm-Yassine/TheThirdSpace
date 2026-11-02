@@ -6,7 +6,6 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { ArrowLeft, Calendar, History } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,6 +15,7 @@ import type { Rating, ReputationSummary } from '../lib/types';
 import { useAuth } from '../lib/auth';
 import Avatar from '../components/Avatar';
 import QualityBadge from '../components/QualityBadge';
+import { showAlert } from '../lib/alert';
 
 type Organizer = {
   uid?: string;
@@ -113,7 +113,7 @@ export default function OrganizerInfoScreen() {
       }
     } catch (error) {
       console.error('Error loading organizer profile:', error);
-      Alert.alert('Error', 'Failed to load organizer profile.');
+      showAlert('Error', 'Failed to load organizer profile.');
     } finally {
       setLoading(false);
     }

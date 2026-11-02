@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, G } from 'react-native-svg';
 import { router } from 'expo-router';

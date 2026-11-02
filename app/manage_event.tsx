@@ -6,7 +6,6 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -31,6 +30,7 @@ import { invalidateEventFeedCache } from '../lib/eventFeed';
 import type { Attendee } from '../lib/types';
 import { isAwaitingPayment } from '../lib/participation';
 import Avatar from '../components/Avatar';
+import { showAlert } from '../lib/alert';
 
 type SectionKey = 'pending' | 'unpaid' | 'confirmed' | 'waitlisted' | 'declined';
 
@@ -152,7 +152,7 @@ export default function ManageEventScreen() {
       }
       await loadEvent();
     } catch (error: any) {
-      Alert.alert('Could not update', error?.message || 'Please try again.');
+      showAlert('Could not update', error?.message || 'Please try again.');
     } finally {
       setPendingUid(null);
     }
@@ -162,7 +162,7 @@ export default function ManageEventScreen() {
 
   const onCancelEvent = () => {
     const headcount = grouped.confirmed.length + grouped.pending.length + grouped.waitlisted.length;
-    Alert.alert(
+    showAlert(
       'Cancel this event?',
       headcount > 0
         ? `${headcount} ${headcount === 1 ? 'person' : 'people'} will be messaged to let them know. The event stays in everyone's history but disappears from Discover.`
@@ -178,14 +178,14 @@ export default function ManageEventScreen() {
               const result = await dataService.cancelEvent(eventId);
               invalidateEventFeedCache();
               await loadEvent();
-              Alert.alert(
+              showAlert(
                 'Event cancelled',
                 result.notified > 0
                   ? `${result.notified} ${result.notified === 1 ? 'person has' : 'people have'} been messaged.`
                   : 'Nobody had joined, so no messages were sent.'
               );
             } catch (error: any) {
-              Alert.alert('Could not cancel', error?.message || 'Please try again.');
+              showAlert('Could not cancel', error?.message || 'Please try again.');
             } finally {
               setBusy(false);
             }
@@ -202,14 +202,14 @@ export default function ManageEventScreen() {
       invalidateEventFeedCache();
       await loadEvent();
     } catch (error: any) {
-      Alert.alert('Could not reopen', error?.message || 'Please try again.');
+      showAlert('Could not reopen', error?.message || 'Please try again.');
     } finally {
       setBusy(false);
     }
   };
 
   const confirmDecline = (participant: Attendee) => {
-    Alert.alert(
+    showAlert(
       `Decline ${participant.name}?`,
       'They will be told the organizer could not fit them in.',
       [

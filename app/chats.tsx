@@ -10,7 +10,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Pressable,
-  Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import FloatingNavigation from '../components/FloatingNavigation';
@@ -21,6 +20,7 @@ import {
 } from '../Backend/firebase';
 import { useAuth } from '../lib/auth';
 import Avatar from '../components/Avatar';
+import { showAlert } from '../lib/alert';
 
 const toDate = (value: any): Date | null => {
   if (!value) return null;
@@ -76,7 +76,7 @@ export default function ChatsScreen() {
 
     if (!user) {
       setLoading(false);
-      Alert.alert('Sign in required', 'Please sign in to view your chats.', [
+      showAlert('Sign in required', 'Please sign in to view your chats.', [
         { text: 'Cancel', style: 'cancel', onPress: () => router.replace('/home') },
         { text: 'Sign In', onPress: () => router.replace('/login') },
       ]);
@@ -111,7 +111,7 @@ export default function ChatsScreen() {
       dataService
         .getOrCreateConversation(otherUserIdParam)
         .then(setSelectedConversationId)
-        .catch(() => Alert.alert('Error', 'Could not open that conversation.'));
+        .catch(() => showAlert('Error', 'Could not open that conversation.'));
       return;
     }
 
@@ -153,7 +153,7 @@ export default function ChatsScreen() {
     } catch (error) {
       console.error('Send message failed:', error);
       setDraft(text); // Restore so the user does not lose what they typed.
-      Alert.alert('Error', 'Could not send your message.');
+      showAlert('Error', 'Could not send your message.');
     } finally {
       setSending(false);
     }

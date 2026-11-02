@@ -8,7 +8,6 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
   Animated,
   Platform,
   useWindowDimensions,
@@ -41,6 +40,7 @@ import {
 import { glassAccent, glassSurface } from '../Glass';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { showAlert } from '../../lib/alert';
 
 interface DiscoverViewProps {
   currentIndex: number;
@@ -56,7 +56,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
       router.push('/login');
       return;
     }
-    Alert.alert('Login Required', 'Please sign in to continue.', [
+    showAlert('Login Required', 'Please sign in to continue.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign In', onPress: () => router.push('/login') },
     ]);
@@ -375,7 +375,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
       ]).start(() => setShowHeart(false));
     } catch (error) {
       console.error('Error adding to favorites:', error);
-      Alert.alert('Error', 'Failed to add event to favorites. Please try again.');
+      showAlert('Error', 'Failed to add event to favorites. Please try again.');
     }
   };
 
@@ -400,7 +400,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
         setJoinedIds((prev) => new Set(prev).add(id));
 
         if (result.status === 'pending') {
-          Alert.alert(
+          showAlert(
             'Request Sent',
             result.reason === 'waitlist'
               ? 'This event is full. You have been added to the waitlist.'
@@ -419,7 +419,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
       }).start(() => setShowConfetti(false));
     } catch (error) {
       console.error('Error joining event:', error);
-      Alert.alert('Error', 'Failed to join event. Please try again.');
+      showAlert('Error', 'Failed to join event. Please try again.');
     }
   };
 

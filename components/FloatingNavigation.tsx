@@ -3,7 +3,6 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Animated,
   Easing,
 } from 'react-native';
@@ -11,6 +10,7 @@ import { router } from 'expo-router';
 import { useAuth } from '../lib/auth';
 import { Svg, Path, Circle, Rect, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { showAlert } from '../lib/alert';
 
 type NavButton = 'home' | 'create' | 'favorites' | 'chats' | 'profile';
 
@@ -63,7 +63,7 @@ export default function FloatingNavigation({ activeScreen, tone = 'dark' }: Floa
 
     // Check if user is logged in for other tabs
     if (!isLoggedIn) {
-      Alert.alert(
+      showAlert(
         'Login Required',
         'Please sign in to access this feature.',
         [

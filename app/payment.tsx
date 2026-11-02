@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   ActivityIndicator,
   Pressable,
   ScrollView,
@@ -15,6 +14,7 @@ import { useAuth } from '../lib/auth';
 import { isStripeConfigured, runDemoPayment, startCheckout } from '../lib/payments';
 import { formatEventDate, formatEventTime } from '../lib/eventTime';
 import { invalidateEventFeedCache } from '../lib/eventFeed';
+import { showAlert } from '../lib/alert';
 
 export default function PaymentScreen() {
   const params = useLocalSearchParams();
@@ -32,7 +32,7 @@ export default function PaymentScreen() {
 
     if (!user) {
       setLoading(false);
-      Alert.alert('Sign in required', 'Please sign in to continue.', [
+      showAlert('Sign in required', 'Please sign in to continue.', [
         { text: 'Cancel', style: 'cancel', onPress: () => router.back() },
         { text: 'Sign In', onPress: () => router.replace('/login') },
       ]);
@@ -60,7 +60,7 @@ export default function PaymentScreen() {
 
   const onPay = async () => {
     if (!eventId || amount <= 0) {
-      Alert.alert('Invalid payment', 'This event has no price attached.');
+      showAlert('Invalid payment', 'This event has no price attached.');
       return;
     }
 
@@ -78,14 +78,14 @@ export default function PaymentScreen() {
 
       await runDemoPayment(eventId, amount);
       invalidateEventFeedCache();
-      Alert.alert('Demo payment complete', 'Your place is confirmed. No money was charged.', [
+      showAlert('Demo payment complete', 'Your place is confirmed. No money was charged.', [
         {
           text: 'Continue',
           onPress: () => router.replace({ pathname: '/activity_detail', params: { eventId } }),
         },
       ]);
     } catch (error: any) {
-      Alert.alert('Payment failed', error?.message || 'Please try again in a moment.');
+      showAlert('Payment failed', error?.message || 'Please try again in a moment.');
     } finally {
       setProcessing(false);
     }

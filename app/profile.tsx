@@ -6,7 +6,6 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   TextInput,
 } from 'react-native';
 import { LogOut, ChevronRight, Star, Calendar, History, Settings, Camera } from 'lucide-react-native';
@@ -32,6 +31,7 @@ import {
   hasEventEnded,
 } from '../lib/eventTime';
 import type { Event, ReputationSummary } from '../lib/types';
+import { showAlert } from '../lib/alert';
 
 type TabKey = 'overview' | 'hosting' | 'upcoming' | 'history';
 
@@ -95,7 +95,7 @@ export default function ProfileScreen() {
       );
     } catch (error) {
       console.error('Error loading profile:', error);
-      Alert.alert('Error', 'Could not load your profile data.');
+      showAlert('Error', 'Could not load your profile data.');
     } finally {
       setLoading(false);
     }
@@ -158,7 +158,7 @@ export default function ProfileScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Allow photo access to set a profile picture.');
+        showAlert('Permission needed', 'Allow photo access to set a profile picture.');
         return;
       }
 
@@ -182,7 +182,7 @@ export default function ProfileScreen() {
       patchProfile({ photoURL: url });
     } catch (error) {
       console.error('Profile photo upload failed:', error);
-      Alert.alert('Upload failed', 'Could not update your photo. Please try again.');
+      showAlert('Upload failed', 'Could not update your photo. Please try again.');
     } finally {
       setUploadingPhoto(false);
     }
@@ -192,7 +192,7 @@ export default function ProfileScreen() {
     if (!user) return;
     const nextName = editDisplayName.trim();
     if (!nextName) {
-      Alert.alert('Missing name', 'Please enter your name.');
+      showAlert('Missing name', 'Please enter your name.');
       return;
     }
 
@@ -212,14 +212,14 @@ export default function ProfileScreen() {
       setIsEditing(false);
     } catch (error) {
       console.error('Error updating profile:', error);
-      Alert.alert('Error', 'Could not save your profile. Please try again.');
+      showAlert('Error', 'Could not save your profile. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   const onLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
+    showAlert('Log out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Log out',
@@ -229,7 +229,7 @@ export default function ProfileScreen() {
             await signOut();
             router.replace('/login');
           } catch {
-            Alert.alert('Error', 'Could not log out. Please try again.');
+            showAlert('Error', 'Could not log out. Please try again.');
           }
         },
       },
@@ -294,7 +294,7 @@ export default function ProfileScreen() {
                     await authService.sendVerificationEmail();
                     setVerificationSent(true);
                   } catch {
-                    Alert.alert('Could not send', 'Please try again in a moment.');
+                    showAlert('Could not send', 'Please try again in a moment.');
                   }
                 }}
               >
@@ -564,7 +564,7 @@ export default function ProfileScreen() {
         onClose={() => setShowDelete(false)}
         onDeleted={() => {
           setShowDelete(false);
-          Alert.alert('Account deleted', 'Your account and data have been removed.');
+          showAlert('Account deleted', 'Your account and data have been removed.');
           router.replace('/home');
         }}
       />

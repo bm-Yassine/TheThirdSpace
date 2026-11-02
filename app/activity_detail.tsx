@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -40,6 +39,7 @@ import ReportDialog from '../components/ReportDialog';
 import Avatar from '../components/Avatar';
 import AttendeeStrip from '../components/AttendeeStrip';
 import { shareEvent } from '../lib/share';
+import { showAlert } from '../lib/alert';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
@@ -143,7 +143,7 @@ export default function ActivityDetailScreen() {
   };
 
   const requireLogin = () => {
-    Alert.alert('Sign in required', 'Please sign in to interact with events.', [
+    showAlert('Sign in required', 'Please sign in to interact with events.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign In', onPress: () => router.push('/login') },
     ]);
@@ -160,7 +160,7 @@ export default function ActivityDetailScreen() {
       else await dataService.removeFromFavorites(String(event.id));
     } catch {
       setIsFavorite(!next);
-      Alert.alert('Error', 'Could not update your favorites right now.');
+      showAlert('Error', 'Could not update your favorites right now.');
     }
   };
 
@@ -175,7 +175,7 @@ export default function ActivityDetailScreen() {
     if (!isLoggedIn || !event) return requireLogin();
 
     if (isCancelled && !commitment) {
-      return Alert.alert('Event cancelled', 'This event is no longer taking part.');
+      return showAlert('Event cancelled', 'This event is no longer taking part.');
     }
 
     // Outstanding payment always takes priority over any other action.
@@ -185,7 +185,7 @@ export default function ActivityDetailScreen() {
 
     if (commitment) {
       const label = commitment.status === 'confirmed' ? 'Leave this event?' : 'Withdraw your request?';
-      Alert.alert(label, 'You can join again later if there is still room.', [
+      showAlert(label, 'You can join again later if there is still room.', [
         { text: 'Keep my spot', style: 'cancel' },
         {
           text: 'Confirm',
@@ -198,7 +198,7 @@ export default function ActivityDetailScreen() {
               invalidateEventFeedCache();
               await load();
             } catch {
-              Alert.alert('Error', 'Could not cancel right now.');
+              showAlert('Error', 'Could not cancel right now.');
             } finally {
               setBusy(false);
             }
@@ -222,7 +222,7 @@ export default function ActivityDetailScreen() {
       invalidateEventFeedCache();
       await load();
     } catch (error: any) {
-      Alert.alert('Could not join', error?.message || 'Please try again in a moment.');
+      showAlert('Could not join', error?.message || 'Please try again in a moment.');
     } finally {
       setBusy(false);
     }
@@ -232,7 +232,7 @@ export default function ActivityDetailScreen() {
     if (!isLoggedIn) return requireLogin();
     const organizerUid = event?.createdBy || event?.organizer?.uid;
     if (!organizerUid) {
-      return Alert.alert('Unavailable', 'This organizer cannot be messaged yet.');
+      return showAlert('Unavailable', 'This organizer cannot be messaged yet.');
     }
     router.push({ pathname: '/chats', params: { otherUserId: organizerUid } });
   };
@@ -301,9 +301,9 @@ export default function ActivityDetailScreen() {
             onPress={async () => {
               const outcome = await shareEvent(event);
               if (outcome === 'copied') {
-                Alert.alert('Link copied', 'Paste it wherever you like.');
+                showAlert('Link copied', 'Paste it wherever you like.');
               } else if (outcome === 'failed') {
-                Alert.alert('Could not share', 'Please try again.');
+                showAlert('Could not share', 'Please try again.');
               }
             }}
             style={[styles.iconBtn, styles.iconBtnNeutral]}
@@ -459,7 +459,7 @@ export default function ActivityDetailScreen() {
             totalGoing={Number(event.attendees || 0)}
             onMessage={(uid, name) => {
               if (uid === user?.uid) return;
-              Alert.alert(name, 'Send them a message?', [
+              showAlert(name, 'Send them a message?', [
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Message',
@@ -485,7 +485,7 @@ export default function ActivityDetailScreen() {
               onPress={() => {
                 const organizerUid = event.createdBy || event.organizer?.uid;
                 if (!organizerUid) return;
-                Alert.alert(
+                showAlert(
                   `Block ${event.organizer?.name || 'this organizer'}?`,
                   'They will no longer be able to message you, and their events will be hidden from your feed.',
                   [
@@ -497,10 +497,10 @@ export default function ActivityDetailScreen() {
                         try {
                           await dataService.blockUser(organizerUid);
                           invalidateEventFeedCache();
-                          Alert.alert('Blocked', 'You will no longer see or hear from them.');
+                          showAlert('Blocked', 'You will no longer see or hear from them.');
                           router.replace('/home');
                         } catch {
-                          Alert.alert('Error', 'Could not block right now.');
+                          showAlert('Error', 'Could not block right now.');
                         }
                       },
                     },

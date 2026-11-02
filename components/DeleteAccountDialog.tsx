@@ -7,7 +7,6 @@ import {
   Modal,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { AlertTriangle } from 'lucide-react-native';
 import { authService, dataService } from '../Backend/firebase';

@@ -1,7 +1,7 @@
 // screens/LoginScreen.tsx
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image, Alert,
+  View, Text, TextInput, StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { authService, dataService } from '../Backend/firebase';

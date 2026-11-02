@@ -9,7 +9,6 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -24,6 +23,7 @@ import { useNearby } from '../../lib/useNearby';
 import { byDistanceFrom, distanceToEvent, formatDistance } from '../../lib/geo';
 import { Event } from '../../lib/types';
 import { getCachedEventFeed, preloadEventFeed } from '../../lib/eventFeed';
+import { showAlert } from '../../lib/alert';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -108,7 +108,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
       router.push('/login');
       return;
     }
-    Alert.alert('Login Required', message, [
+    showAlert('Login Required', message, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign In', onPress: () => router.push('/login') },
     ]);
@@ -158,7 +158,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
         setFavoriteIds((prev) => new Set(prev).add(id));
       }
     } catch {
-      Alert.alert('Error', 'Failed to update favorites.');
+      showAlert('Error', 'Failed to update favorites.');
     }
   };
 
@@ -181,7 +181,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
         const result = await dataService.commitToEvent(id);
         setJoinedIds((prev) => new Set(prev).add(id));
         if (result.status === 'pending') {
-          Alert.alert(
+          showAlert(
             'Request Sent',
             result.reason === 'waitlist'
               ? 'This event is full. You were added to the waitlist.'
@@ -190,7 +190,7 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
         }
       }
     } catch {
-      Alert.alert('Error', 'Failed to join this event.');
+      showAlert('Error', 'Failed to join this event.');
     }
   };
 

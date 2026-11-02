@@ -9,7 +9,6 @@ import {
   Platform,
   Pressable,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { dataService } from '../Backend/firebase';
@@ -18,6 +17,7 @@ import { formatEventDate, formatEventTime, byStartAscending } from '../lib/event
 import { Event } from '../lib/types';
 import FloatingNavigation from '../components/FloatingNavigation';
 import { preloadEventFeed } from '../lib/eventFeed';
+import { showAlert } from '../lib/alert';
 
 export default function FavoritesScreen() {
   const { user, initializing } = useAuth();
@@ -29,7 +29,7 @@ export default function FavoritesScreen() {
 
     if (!user) {
       setLoading(false);
-      Alert.alert('Sign in required', 'Please sign in to view your favorites.', [
+      showAlert('Sign in required', 'Please sign in to view your favorites.', [
         { text: 'OK', onPress: () => router.replace('/login') },
       ]);
       return;
@@ -60,7 +60,7 @@ export default function FavoritesScreen() {
       setFavoriteEvents([...fromFeed, ...backfilled].sort(byStartAscending));
     } catch (error) {
       console.error('Error loading favorites:', error);
-      Alert.alert('Error', 'Failed to load favorites.');
+      showAlert('Error', 'Failed to load favorites.');
     } finally {
       setLoading(false);
     }
@@ -71,10 +71,10 @@ export default function FavoritesScreen() {
       await dataService.removeFromFavorites(eventId.toString());
       // Remove from local state
       setFavoriteEvents(prev => prev.filter(e => String(e.id) !== eventId.toString()));
-      Alert.alert('Removed', 'Event removed from favorites.');
+      showAlert('Removed', 'Event removed from favorites.');
     } catch (error) {
       console.error('Error removing favorite:', error);
-      Alert.alert('Error', 'Failed to remove from favorites.');
+      showAlert('Error', 'Failed to remove from favorites.');
     }
   };
 
@@ -108,7 +108,7 @@ export default function FavoritesScreen() {
         style={styles.removeButton}
         onPress={(e) => {
           e.stopPropagation();
-          Alert.alert(
+          showAlert(
             'Remove Favorite',
             'Remove this event from your favorites?',
             [

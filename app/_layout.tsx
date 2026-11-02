@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { preloadEventFeed } from '../lib/eventFeed';
 import { AuthProvider } from '../lib/auth';
 import Analytics from '../components/Analytics';
+import AlertHost from '../components/AlertHost';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -66,6 +67,8 @@ export default function RootLayout() {
             </Stack>
           </ThemeProvider>
           <StatusBar style="auto" />
+          {/* Above the navigator so an alert covers whatever screen raised it. */}
+          <AlertHost />
           {/* Web only; a no-op on native via Analytics.tsx. */}
           <Analytics />
         </AuthProvider>

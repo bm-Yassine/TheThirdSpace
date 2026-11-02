@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Alert,
   Platform,
   ActivityIndicator,
   Image,
@@ -34,6 +33,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Play } from 'lucide-react-native';
 import type { Event, EventMedia, EventMusic } from '../lib/types';
+import { showAlert } from '../lib/alert';
 
 export default function CreateEventScreen() {
   // The same form serves create and edit. Passing ?eventId= switches it into
@@ -95,7 +95,7 @@ export default function CreateEventScreen() {
     if (initializing) return;
 
     if (!user) {
-      Alert.alert('Sign in required', 'Please sign in to continue.', [
+      showAlert('Sign in required', 'Please sign in to continue.', [
         { text: 'OK', onPress: () => router.replace('/login') },
       ]);
       setLoading(false);
@@ -170,13 +170,13 @@ export default function CreateEventScreen() {
         if (!active) return;
 
         if (!event) {
-          Alert.alert('Not found', 'That event no longer exists.', [
+          showAlert('Not found', 'That event no longer exists.', [
             { text: 'OK', onPress: () => router.back() },
           ]);
           return;
         }
         if (event.createdBy !== user.uid) {
-          Alert.alert('Not allowed', 'Only the organizer can edit this event.', [
+          showAlert('Not allowed', 'Only the organizer can edit this event.', [
             { text: 'OK', onPress: () => router.back() },
           ]);
           return;
@@ -219,7 +219,7 @@ export default function CreateEventScreen() {
           });
         }
       } catch {
-        Alert.alert('Error', 'Could not load that event.');
+        showAlert('Error', 'Could not load that event.');
       }
     })();
 
@@ -281,7 +281,7 @@ export default function CreateEventScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Please allow media library access to add photos/videos.');
+        showAlert('Permission needed', 'Please allow media library access to add photos/videos.');
         return;
       }
 
@@ -309,7 +309,7 @@ export default function CreateEventScreen() {
       }));
     } catch (error) {
       console.error('Error selecting media:', error);
-      Alert.alert('Error', 'Could not access media library right now.');
+      showAlert('Error', 'Could not access media library right now.');
     }
   };
 
@@ -325,7 +325,7 @@ export default function CreateEventScreen() {
       const asset = result.assets[0];
       const MAX_MB = 15;
       if (asset.size && asset.size > MAX_MB * 1024 * 1024) {
-        Alert.alert('File too large', `Please choose a track under ${MAX_MB} MB.`);
+        showAlert('File too large', `Please choose a track under ${MAX_MB} MB.`);
         return;
       }
 
@@ -338,7 +338,7 @@ export default function CreateEventScreen() {
       }));
     } catch (error) {
       console.error('Error picking audio:', error);
-      Alert.alert('Error', 'Could not open your files right now.');
+      showAlert('Error', 'Could not open your files right now.');
     }
   };
 
@@ -355,35 +355,35 @@ export default function CreateEventScreen() {
   const handleSubmit = async () => {
     const currentUser = user;
     if (!currentUser) {
-      Alert.alert('Authentication Required', 'Please sign in to create an event.', [
+      showAlert('Authentication Required', 'Please sign in to create an event.', [
         { text: 'OK', onPress: () => router.replace('/login') },
       ]);
       return;
     }
 
     if (!userProfile) {
-      Alert.alert('Error', 'Unable to create event. Please try again.');
+      showAlert('Error', 'Unable to create event. Please try again.');
       return;
     }
 
     if (formData.tags.length < 3) {
-      Alert.alert('Error', 'Please add at least 3 tags');
+      showAlert('Error', 'Please add at least 3 tags');
       return;
     }
 
     if (!formData.title || !formData.description || !location.label.trim() || !formData.type) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      showAlert('Error', 'Please fill in all required fields');
       return;
     }
 
     const startsAt = combineDateAndTime(schedule.date, schedule.time);
     if (!startsAt) {
-      Alert.alert('Invalid date', 'Please pick a valid date and start time.');
+      showAlert('Invalid date', 'Please pick a valid date and start time.');
       return;
     }
 
     if (startsAt.getTime() < Date.now() - 60 * 1000) {
-      Alert.alert('Date in the past', 'Pick a start time in the future so people can still join.');
+      showAlert('Date in the past', 'Pick a start time in the future so people can still join.');
       return;
     }
 
@@ -395,7 +395,7 @@ export default function CreateEventScreen() {
       Number.isFinite(maxCapacity) &&
       maxCapacity < Number(loadedEvent?.attendees || 0)
     ) {
-      Alert.alert(
+      showAlert(
         'Capacity too low',
         `${loadedEvent.attendees} people already have a confirmed place. Set the maximum to at least that.`
       );
@@ -406,7 +406,7 @@ export default function CreateEventScreen() {
       Number.isFinite(maxCapacity) &&
       minCapacity > maxCapacity
     ) {
-      Alert.alert('Check capacity', 'The minimum number of people cannot exceed the maximum.');
+      showAlert('Check capacity', 'The minimum number of people cannot exceed the maximum.');
       return;
     }
 
@@ -422,7 +422,7 @@ export default function CreateEventScreen() {
           musicUri = await uploadEventAudio(musicUri, formData.musicFileName || 'track');
         } catch (audioError) {
           console.error('Audio upload failed:', audioError);
-          Alert.alert(
+          showAlert(
             'Upload failed',
             'The soundtrack could not be uploaded. The event has not been saved.'
           );
@@ -453,7 +453,7 @@ export default function CreateEventScreen() {
           uploadedMedia = await uploadEventMedia(formData.media, setUploadProgress);
         } catch (uploadError) {
           console.error('Media upload failed:', uploadError);
-          Alert.alert(
+          showAlert(
             'Upload failed',
             'Your photos could not be uploaded. The event has not been saved — check your connection and try again.'
           );
@@ -510,7 +510,7 @@ export default function CreateEventScreen() {
         await dataService.updateEvent(editingEventId, eventData);
         invalidateEventFeedCache();
 
-        Alert.alert('Changes saved', 'Your event has been updated.', [
+        showAlert('Changes saved', 'Your event has been updated.', [
           {
             text: 'OK',
             onPress: () =>
@@ -542,7 +542,7 @@ export default function CreateEventScreen() {
       };
       upsertCachedEvent(createdEvent, { maxItems: 60 });
 
-      Alert.alert('Event created', 'Your event is now live in Discover.', [
+      showAlert('Event created', 'Your event is now live in Discover.', [
         {
           text: 'View it',
           onPress: () => router.replace({ pathname: '/activity_detail', params: { eventId } }),
@@ -551,7 +551,7 @@ export default function CreateEventScreen() {
       ]);
     } catch (error: any) {
       console.error(isEditing ? 'Error updating event:' : 'Error creating event:', error);
-      Alert.alert(
+      showAlert(
         'Error',
         error?.message || `Failed to ${isEditing ? 'update' : 'create'} the event. Please try again.`
       );

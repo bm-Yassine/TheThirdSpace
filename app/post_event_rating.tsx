@@ -6,7 +6,6 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { ArrowLeft, Star, CheckCircle } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,6 +15,7 @@ import { hasEventEnded } from '../lib/eventTime';
 import type { Attendee } from '../lib/types';
 import { qualitiesFor, type Quality } from '../lib/ratingQualities';
 import Avatar from '../components/Avatar';
+import { showAlert } from '../lib/alert';
 
 type Person = {
   uid: string;
@@ -175,7 +175,7 @@ export default function PostEventRatingScreen() {
       setIsComplete(true);
       setTimeout(() => router.back(), 1800);
     } catch {
-      Alert.alert('Could not save', 'Your ratings did not save. Please try again.');
+      showAlert('Could not save', 'Your ratings did not save. Please try again.');
     } finally {
       setSubmitting(false);
     }
