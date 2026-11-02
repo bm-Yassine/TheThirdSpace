@@ -11,7 +11,7 @@ import { router, useLocalSearchParams } from 'expo-router';
  * a lawyer — see the note at the top of the file in the repository README.
  */
 
-const LAST_UPDATED = '3 September 2026';
+const LAST_UPDATED = '2 November 2026';
 const CONTACT = 'dev.be.yassine@gmail.com';
 
 type Section = { heading: string; body: string[] };
@@ -26,6 +26,7 @@ const PRIVACY: Section[] = [
       'Messages: the content of messages you send to other users.',
       'Ratings: the qualities and star ratings you give and receive after an event.',
       'Payments: if you pay for an event, Stripe processes the card details. We never see or store your card number. We keep a record that a payment happened, its amount, and which event it was for.',
+      'Page views: Vercel Web Analytics counts which pages are visited. It is cookieless and aggregate — the referring site, country, browser and device type, with no persistent identifier and nothing tied to your account.',
     ],
   },
   {
@@ -33,7 +34,7 @@ const PRIVACY: Section[] = [
     body: [
       'We do not track your location in the background. A location is attached to an event only when you choose a place while creating one.',
       'We do not sell your data, and we do not share it with advertisers.',
-      'We do not use third-party analytics or advertising trackers.',
+      'We do not use advertising trackers, and nothing follows you across other websites.',
     ],
   },
   {
@@ -49,7 +50,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Where your data is held',
     body: [
-      'The app runs on Google Firebase (authentication, database and file storage) and is hosted on Vercel. Payments are processed by Stripe. Map tiles and place search come from OpenStreetMap.',
+      'The app runs on Google Firebase (authentication, database and file storage) and is hosted on Vercel, which also provides the page-view analytics. Payments are processed by Stripe. Map tiles and place search come from OpenStreetMap.',
       'Data may be stored on servers outside your country, including in the United States, under those providers’ own data protection commitments.',
     ],
   },
