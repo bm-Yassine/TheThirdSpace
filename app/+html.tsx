@@ -21,6 +21,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
           content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
         />
 
+        <title>The Third Space — Find your people</title>
         <meta
           name="description"
           content="Find what is happening around you — and the people doing it."
