@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -108,16 +108,23 @@ export default function CreateEventScreen() {
   );
 
   /**
+   * Fixed once per form. Seeding the automatic cover on the title instead
+   * would reshuffle the picture — and fetch a new one — on every keystroke;
+   * seeding it on the category alone would give every supper club in the city
+   * the same photo. Once the event is saved the choice is pinned in its
+   * imageUrl, so this never needs to survive a reload.
+   */
+  const coverSeed = useRef(Math.random().toString(36).slice(2)).current;
+
+  /**
    * The cover this event will get: the organizer's choice if they made one,
-   * otherwise one picked from their category. Seeded by title so the same
-   * event keeps the same picture instead of changing on every keystroke of
-   * something else.
+   * otherwise one picked from their category.
    */
   const chosenCover = useMemo(
     () =>
       (formData.coverId ? findCover(formData.coverId) : undefined) ??
-      suggestCover({ categoryId: coverCategory, seed: formData.title || editingEventId }),
-    [formData.coverId, coverCategory, formData.title, editingEventId]
+      suggestCover({ categoryId: coverCategory, seed: editingEventId || coverSeed }),
+    [formData.coverId, coverCategory, editingEventId, coverSeed]
   );
 
   // Waits for the auth provider to settle before deciding the user is signed
