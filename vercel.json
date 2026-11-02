@@ -4,6 +4,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/e/:eventId",
+      "destination": "/api/event-preview?id=:eventId"
+    },
+    {
       "source": "/((?!api/|_expo/|assets/|favicon\\.ico|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }

@@ -20,7 +20,11 @@ export const eventUrl = (eventId: string): string => {
       ? window.location.origin
       : PUBLIC_SITE_URL;
 
-  return `${base}/activity_detail?eventId=${encodeURIComponent(eventId)}`;
+  // /e/<id> rather than the in-app route: it is served by api/event-preview,
+  // which gives the link real Open Graph tags for this event before bouncing
+  // the reader into the app. A direct /activity_detail link previews as the
+  // generic site card, identical for every event.
+  return `${base}/e/${encodeURIComponent(eventId)}`;
 };
 
 /** The message that accompanies the link. */
