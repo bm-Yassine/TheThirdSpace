@@ -9,7 +9,6 @@ import {
   TextInput,
 } from 'react-native';
 import { LogOut, ChevronRight, Star, Calendar, History, Settings, Camera } from 'lucide-react-native';
-import { Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadProfilePhoto } from '../lib/storage';
 import DeleteAccountDialog from '../components/DeleteAccountDialog';
@@ -33,15 +32,19 @@ import {
 import type { Event, ReputationSummary } from '../lib/types';
 import { showAlert } from '../lib/alert';
 
-type TabKey = 'overview' | 'hosting' | 'upcoming' | 'history';
+type TabKey = 'overview' | 'hosting' | 'activity';
 
 type JoinedEvent = { event: Event; commitment: UserCommitment };
 
+/**
+ * What you are going to and what you have been to are one story, so Activity
+ * shows both at once. As separate tabs they split a short list in two and made
+ * you click to find out you had nothing in either.
+ */
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'hosting', label: 'Hosting' },
-  { key: 'upcoming', label: 'Upcoming' },
-  { key: 'history', label: 'History' },
+  { key: 'activity', label: 'Activity' },
 ];
 
 export default function ProfileScreen() {
@@ -523,40 +526,50 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {activeTab === 'upcoming' && (
-          <Section
-            title="Events you are going to"
-            Icon={Calendar}
-            emptyText="Nothing booked yet. Find something in Discover."
-          >
-            {upcoming.map(({ event, commitment }) => (
-              <EventRow
-                key={String(event.id)}
-                event={event}
-                onPress={() => openEvent(event.id)}
-                trailing={statusLabel(commitment, false)}
-                highlight={commitment.paymentStatus === 'pending'}
-              />
-            ))}
-          </Section>
-        )}
+        {activeTab === 'activity' &&
+          (upcoming.length === 0 && history.length === 0 ? (
+            // Two empty sections stacked up read as two separate failures.
+            <Section
+              title="Your activity"
+              Icon={Calendar}
+              emptyText="Nothing yet. Join something in Discover and it will show up here."
+            >
+              {null}
+            </Section>
+          ) : (
+            <>
+              <Section
+                title="Events you are going to"
+                Icon={Calendar}
+                emptyText="Nothing booked yet. Find something in Discover."
+              >
+                {upcoming.map(({ event, commitment }) => (
+                  <EventRow
+                    key={String(event.id)}
+                    event={event}
+                    onPress={() => openEvent(event.id)}
+                    trailing={statusLabel(commitment, false)}
+                    highlight={commitment.paymentStatus === 'pending'}
+                  />
+                ))}
+              </Section>
 
-        {activeTab === 'history' && (
-          <Section
-            title="Events you attended"
-            Icon={History}
-            emptyText="Your attended events will show up here."
-          >
-            {history.map(({ event, commitment }) => (
-              <EventRow
-                key={String(event.id)}
-                event={event}
-                onPress={() => openEvent(event.id)}
-                trailing={statusLabel(commitment, true)}
-              />
-            ))}
-          </Section>
-        )}
+              <Section
+                title="Events you attended"
+                Icon={History}
+                emptyText="Your attended events will show up here."
+              >
+                {history.map(({ event, commitment }) => (
+                  <EventRow
+                    key={String(event.id)}
+                    event={event}
+                    onPress={() => openEvent(event.id)}
+                    trailing={statusLabel(commitment, true)}
+                  />
+                ))}
+              </Section>
+            </>
+          ))}
       </ScrollView>
 
       <DeleteAccountDialog
