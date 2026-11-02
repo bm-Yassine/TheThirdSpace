@@ -111,7 +111,12 @@ export default function MusicPicker({
           </View>
 
           {moods.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.moodScroll}
+              contentContainerStyle={styles.moodRow}
+            >
               <Pressable
                 onPress={() => setMood(null)}
                 style={[styles.moodChip, mood === null && styles.moodChipOn]}
@@ -225,7 +230,8 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: '#111827', padding: 0 },
 
-  moodRow: { gap: 7, paddingVertical: 12, paddingRight: 8 },
+  moodScroll: { flexGrow: 0, flexShrink: 0 },
+  moodRow: { gap: 7, paddingVertical: 12, paddingRight: 8, alignItems: 'center' },
   moodChip: {
     paddingHorizontal: 13,
     paddingVertical: 7,

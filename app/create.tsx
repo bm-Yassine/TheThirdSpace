@@ -21,7 +21,7 @@ import EventScheduleField, {
   type EventSchedule,
 } from '../components/EventScheduleField';
 import { combineDateAndTime, getEventStart } from '../lib/eventTime';
-import { EVENT_TYPES, suggestTags } from '../lib/taxonomy';
+import { EVENT_TYPES, categoryByLabel, suggestTags } from '../lib/taxonomy';
 import { loadEventDefaults, saveEventDefaults } from '../lib/eventDefaults';
 import MusicPicker from '../components/MusicPicker';
 import { creditLine } from '../lib/musicLicence';
@@ -34,6 +34,15 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Play } from 'lucide-react-native';
 import type { Event, EventMedia, EventMusic } from '../lib/types';
 import { showAlert } from '../lib/alert';
+import CoverPicker from '../components/CoverPicker';
+import {
+  COVERS,
+  coverUrl,
+  findCover,
+  isLibraryCover,
+  suggestCover,
+  type CoverCategory,
+} from '../lib/coverLibrary';
 
 export default function CreateEventScreen() {
   // The same form serves create and edit. Passing ?eventId= switches it into
@@ -61,6 +70,8 @@ export default function CreateEventScreen() {
     musicUri: string;
     musicFileName: string;
     media: EventMedia[];
+    /** A library cover, used when the organizer uploads no photo of their own. */
+    coverId: string;
   }>({
     title: '',
     type: '',
@@ -77,6 +88,7 @@ export default function CreateEventScreen() {
     musicUri: '',
     musicFileName: '',
     media: [],
+    coverId: '',
   });
 
   const [newTag, setNewTag] = useState('');
@@ -88,6 +100,25 @@ export default function CreateEventScreen() {
   const [prefilled, setPrefilled] = useState(false);
   const [musicPickerOpen, setMusicPickerOpen] = useState(false);
   const [musicCredit, setMusicCredit] = useState<string | null>(null);
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
+
+  const coverCategory = useMemo(
+    () => (categoryByLabel(formData.type)?.id as CoverCategory | undefined) ?? null,
+    [formData.type]
+  );
+
+  /**
+   * The cover this event will get: the organizer's choice if they made one,
+   * otherwise one picked from their category. Seeded by title so the same
+   * event keeps the same picture instead of changing on every keystroke of
+   * something else.
+   */
+  const chosenCover = useMemo(
+    () =>
+      (formData.coverId ? findCover(formData.coverId) : undefined) ??
+      suggestCover({ categoryId: coverCategory, seed: formData.title || editingEventId }),
+    [formData.coverId, coverCategory, formData.title, editingEventId]
+  );
 
   // Waits for the auth provider to settle before deciding the user is signed
   // out — a synchronous currentUser read is null during web session restore.
@@ -200,6 +231,11 @@ export default function CreateEventScreen() {
           musicUri: event.music?.uri || '',
           musicFileName: event.music?.fileName || '',
           media: event.media || [],
+          // Only a library cover can be restored as a choice. An uploaded
+          // photo lives in event.media and takes precedence anyway.
+          coverId: isLibraryCover(event.imageUrl)
+            ? (COVERS.find((cover) => String(event.imageUrl).includes(cover.id))?.id ?? '')
+            : '',
         });
 
         setLocation({
@@ -498,9 +534,11 @@ export default function CreateEventScreen() {
             'User',
           photoURL: userProfile.photoURL,
         },
-        imageUrl:
-          primaryImageFromMedia ||
-          'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=800&fit=crop', // Default image
+        // An organizer's own photo wins; then a cover they chose; then one
+        // picked for them from the library. Previously every event without a
+        // photo fell back to one hardcoded image, so the feed showed the same
+        // mountain lake over and over.
+        imageUrl: primaryImageFromMedia || coverUrl(chosenCover, 'full'),
       };
 
       if (isEditing) {
@@ -861,6 +899,32 @@ export default function CreateEventScreen() {
         </View>
 
         <View style={styles.formCard}>
+          <Text style={styles.label}>Cover image</Text>
+          <View style={styles.coverRow}>
+            <Image
+              source={{ uri: coverUrl(chosenCover, 'thumb') }}
+              style={styles.coverPreview}
+              resizeMode="cover"
+            />
+            <View style={styles.coverCopy}>
+              <Text style={styles.coverName} numberOfLines={1}>
+                {formData.coverId ? chosenCover.label : `${chosenCover.label} (picked for you)`}
+              </Text>
+              <TouchableOpacity
+                style={styles.ownFileButton}
+                onPress={() => setCoverPickerOpen(true)}
+              >
+                <Text style={styles.ownFileButtonText}>Choose a cover</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={styles.helperText}>
+            A photo you add below is used instead. Otherwise this is the picture people see in
+            Discover.
+          </Text>
+        </View>
+
+        <View style={styles.formCard}>
           <Text style={styles.label}>Media (photos / videos)</Text>
           <TouchableOpacity style={styles.mediaPickerButton} onPress={pickMediaFromDevice}>
             <Text style={styles.mediaPickerButtonText}>Choose from device</Text>
@@ -928,6 +992,17 @@ export default function CreateEventScreen() {
             musicArtist: track.artist,
           }));
           setMusicCredit(creditLine(track));
+        }}
+      />
+
+      <CoverPicker
+        visible={coverPickerOpen}
+        onClose={() => setCoverPickerOpen(false)}
+        selectedId={formData.coverId || undefined}
+        initialCategory={coverCategory}
+        onSelect={(cover) => {
+          setFormData((prev) => ({ ...prev, coverId: cover.id }));
+          setCoverPickerOpen(false);
         }}
       />
 
@@ -1014,6 +1089,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   libraryButtonText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
+  coverRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  coverPreview: { width: 96, height: 64, borderRadius: 10, backgroundColor: '#e5e7eb' },
+  coverCopy: { flex: 1 },
+  coverName: { fontSize: 13, fontWeight: '600', color: '#374151' },
+
   ownFileButton: { paddingVertical: 11, alignItems: 'center' },
   ownFileButtonText: { fontSize: 13, fontWeight: '600', color: '#4f46e5' },
   creditNote: { fontSize: 11, color: '#6b7280', marginTop: 6, fontStyle: 'italic' },
