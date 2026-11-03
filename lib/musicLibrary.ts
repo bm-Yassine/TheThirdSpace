@@ -1,6 +1,7 @@
 import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../Backend/firebase';
-import { isUsable, type LibraryTrack } from './musicLicence';
+import { isUsable, mergeTracks, sortByTitle, type LibraryTrack } from './musicLicence';
+import { BUILT_IN_TRACKS } from './musicCatalogue';
 
 export * from './musicLicence';
 
@@ -27,19 +28,24 @@ let cache: LibraryTrack[] | null = null;
 export const loadLibrary = async (options?: { force?: boolean }): Promise<LibraryTrack[]> => {
   if (cache && !options?.force) return cache;
 
+  const builtIn = BUILT_IN_TRACKS.filter(isUsable);
+
   try {
     const snapshot = await getDocs(collection(db, 'musicTracks'));
-    const tracks = snapshot.docs
+    const seeded = snapshot.docs
       .map((snap) => ({ ...(snap.data() as any), id: snap.id }) as LibraryTrack)
-      .filter(isUsable)
-      .sort((a, b) => a.title.localeCompare(b.title));
-    cache = tracks;
-    return tracks;
+      .filter(isUsable);
+
+    cache = mergeTracks(builtIn, seeded);
+    return cache;
   } catch (error) {
+    // Offline, or the rules reject the read. The built-ins still give the
+    // organizer something to choose from rather than an empty sheet.
     console.warn('Could not load the music library:', error);
-    return cache ?? [];
+    return cache ?? sortByTitle(builtIn);
   }
 };
+
 
 /** Moods that actually have tracks, so the filter never offers an empty one. */
 /** Used by the seeding tool; writes are organizer-restricted by the rules. */

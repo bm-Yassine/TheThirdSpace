@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import {
   Image,
+  Platform,
   StyleSheet,
   View,
   type ImageStyle,
@@ -34,11 +35,18 @@ export default function EventMediaBackground({
   event,
   active,
   style,
+  blurRadius = 0,
 }: {
   event: Event;
   /** True when this card is the one on screen. */
   active: boolean;
   style?: StyleProp<ViewStyle & ImageStyle>;
+  /**
+   * Blurs the background. Cards use this: the media is scenery behind the
+   * event's text, and sharp detail competes with it for attention. Discover
+   * shows the media full-bleed and leaves it alone.
+   */
+  blurRadius?: number;
 }) {
   const media = primaryMedia(event);
   const isVideo = media?.type === 'video';
@@ -61,9 +69,9 @@ export default function EventMediaBackground({
   if (!media) return <View style={[styles.fill, styles.placeholder, style]} />;
 
   if (isVideo) {
-    return (
+    const video = (
       <VideoView
-        style={[styles.fill, style]}
+        style={styles.fill}
         player={player}
         contentFit="cover"
         nativeControls={false}
@@ -72,6 +80,23 @@ export default function EventMediaBackground({
         allowsPictureInPicture={false}
       />
     );
+
+    // Image takes blurRadius on every platform, but VideoView does not, so a
+    // blurred video has to go through a CSS filter on its container. That is
+    // web-only; on native the card's scrim carries the separation instead.
+    return (
+      <View
+        style={[
+          styles.fill,
+          blurRadius && Platform.OS === 'web'
+            ? ({ filter: `blur(${blurRadius}px)` } as unknown as ViewStyle)
+            : null,
+          style,
+        ]}
+      >
+        {video}
+      </View>
+    );
   }
 
   return (
@@ -79,6 +104,7 @@ export default function EventMediaBackground({
       source={{ uri: media.uri }}
       style={[styles.fill, style as StyleProp<ImageStyle>]}
       resizeMode="cover"
+      blurRadius={blurRadius || undefined}
     />
   );
 }

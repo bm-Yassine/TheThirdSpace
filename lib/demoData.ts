@@ -68,6 +68,13 @@ const hostedEvents: any[] = [
     maxAttendees: 12,
     minAttendees: 6,
     tags: ['Food', 'Social', 'Supper Club'],
+    // Demo mode should show the soundtrack feature, credit and all.
+    music: {
+      title: 'Bolly Baby',
+      artist: 'Chenard Walcker',
+      uri: 'https://archive.org/download/chenard_walcker-sweet_kali_breathe/03-chenard_walcker-bolly_baby.mp3',
+      attribution: 'Bolly Baby by Chenard Walcker (CC BY), via the Internet Archive',
+    },
     cost: 32,
     requiresApproval: true,
     status: 'active',

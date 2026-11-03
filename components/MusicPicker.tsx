@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  Pressable,
-  Modal,
-  ScrollView,
-  TextInput,
-  StyleSheet,
   ActivityIndicator,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { Search, Play, Pause, Check, X, Music } from 'lucide-react-native';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { playableAudioUri } from '../lib/audioSource';
 import { loadLibrary } from '../lib/musicLibrary';
 import { availableMoods, byMood, creditLine, searchTracks, type LibraryTrack } from '../lib/musicLicence';
 
@@ -71,7 +73,9 @@ export default function MusicPicker({
     }
     player?.remove();
     try {
-      const next = createAudioPlayer({ uri: track.uri });
+      const next = createAudioPlayer({
+        uri: playableAudioUri(track.uri, Platform.OS === 'web')!,
+      });
       next.loop = true;
       next.play();
       setPlayer(next);

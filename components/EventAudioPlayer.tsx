@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import type { EventMusic } from '../lib/types';
+import { playableAudioUri } from '../lib/audioSource';
 
 /**
  * Plays the soundtrack attached to the event currently on screen.
@@ -34,7 +35,8 @@ export default function EventAudioPlayer({
   }, []);
 
   useEffect(() => {
-    const uri = music?.uri;
+    // Library tracks are proxied on the web; see lib/audioSource.
+    const uri = playableAudioUri(music?.uri, Platform.OS === 'web');
 
     // Swapping to a different track (or to none) tears the old player down.
     if (sourceRef.current !== uri) {

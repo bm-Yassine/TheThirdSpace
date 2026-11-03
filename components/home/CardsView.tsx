@@ -307,7 +307,12 @@ export default function CardsView({ viewMode, setViewMode }: CardsViewProps) {
             a grid decoding several at once would be wasteful, and the first
             frame works as a poster.
           */}
-          <EventMediaBackground event={event} active={false} style={styles.cardBackgroundImage} />
+          <EventMediaBackground
+            event={event}
+            active={false}
+            style={styles.cardBackgroundImage}
+            blurRadius={14}
+          />
           <View style={styles.cardOverlay} />
 
           {/* Card Content */}
@@ -429,8 +434,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   cardBackgroundImage: {
-    width: '100%',
-    height: '100%',
+    // Oversized and offset: a blur samples beyond the edges, which otherwise
+    // leaves a pale fringe around the card.
+    width: '112%',
+    height: '112%',
+    top: '-6%',
+    left: '-6%',
     position: 'absolute',
   },
   cardOverlay: {

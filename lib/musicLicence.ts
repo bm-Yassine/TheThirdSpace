@@ -82,3 +82,21 @@ export const searchTracks = (tracks: LibraryTrack[], text: string): LibraryTrack
       (track.genre || '').toLowerCase().includes(needle)
   );
 };
+
+export const sortByTitle = (tracks: LibraryTrack[]): LibraryTrack[] =>
+  [...tracks].sort((a, b) => a.title.localeCompare(b.title));
+
+/**
+ * Combines the built-in catalogue with whatever Firestore holds.
+ *
+ * Firestore wins on a clash of ids, so a built-in track can be corrected — or
+ * swapped for a copy mirrored into our own Storage — without a release.
+ */
+export const mergeTracks = (
+  builtIn: LibraryTrack[],
+  seeded: LibraryTrack[]
+): LibraryTrack[] => {
+  const byId = new Map(builtIn.map((track) => [track.id, track]));
+  for (const track of seeded) byId.set(track.id, track);
+  return sortByTitle([...byId.values()]);
+};

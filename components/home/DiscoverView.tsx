@@ -111,7 +111,16 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     [ranked]
   );
 
-  const currentMusicTitle = orderedEvents[currentIndex]?.music?.title || 'Ambient Vibes';
+  const currentMusic = orderedEvents[currentIndex]?.music;
+  const currentMusicTitle = currentMusic?.title || 'Ambient Vibes';
+  /**
+   * CC-BY obliges a visible credit wherever the track plays, and the feed is
+   * where it plays. The ticker already scrolls when its text overflows, so
+   * appending the credit costs no layout.
+   */
+  const tickerText = currentMusic?.attribution
+    ? `${currentMusicTitle} · ${currentMusic.attribution}`
+    : currentMusicTitle;
   const tickerOverflowDistance = Math.max(0, audioTickerTextWidth - audioTickerViewportWidth);
   const shouldMarquee = !isMuted && tickerOverflowDistance > 2;
   const marqueeTranslateX = marqueeAnimation.interpolate({
@@ -267,7 +276,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
     loop.start();
 
     return () => loop.stop();
-  }, [currentMusicTitle, shouldMarquee, marqueeAnimation, tickerOverflowDistance]);
+  }, [tickerText, shouldMarquee, marqueeAnimation, tickerOverflowDistance]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') {
@@ -711,7 +720,7 @@ export default function DiscoverView({ currentIndex, setCurrentIndex, viewMode, 
                 },
               ]}
             >
-              {currentMusicTitle}
+              {tickerText}
             </Animated.Text>
           </View>
 

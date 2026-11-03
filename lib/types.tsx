@@ -14,6 +14,14 @@ export type EventMusic = {
   uri?: string;
   /** Original filename, shown while picking. */
   fileName?: string;
+  /**
+   * The credit owed for this track, displayed wherever it plays.
+   *
+   * Copied onto the event at creation rather than looked up from the library,
+   * so the credit survives the track later being edited or withdrawn. Empty
+   * for CC0, public domain and an organizer's own upload, which owe none.
+   */
+  attribution?: string;
 };
 
 export type EventMedia = {

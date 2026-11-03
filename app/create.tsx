@@ -69,6 +69,7 @@ export default function CreateEventScreen() {
     musicStartAt: string;
     musicUri: string;
     musicFileName: string;
+    musicAttribution: string;
     media: EventMedia[];
     /** A library cover, used when the organizer uploads no photo of their own. */
     coverId: string;
@@ -87,6 +88,7 @@ export default function CreateEventScreen() {
     musicStartAt: '',
     musicUri: '',
     musicFileName: '',
+    musicAttribution: '',
     media: [],
     coverId: '',
   });
@@ -99,7 +101,6 @@ export default function CreateEventScreen() {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [prefilled, setPrefilled] = useState(false);
   const [musicPickerOpen, setMusicPickerOpen] = useState(false);
-  const [musicCredit, setMusicCredit] = useState<string | null>(null);
   const [coverPickerOpen, setCoverPickerOpen] = useState(false);
 
   const coverCategory = useMemo(
@@ -116,9 +117,12 @@ export default function CreateEventScreen() {
    */
   const coverSeed = useRef(Math.random().toString(36).slice(2)).current;
 
+  /** The organizer's own photo or video, if they picked one. */
+  const backgroundMedia = formData.media[0] ?? null;
+
   /**
-   * The cover this event will get: the organizer's choice if they made one,
-   * otherwise one picked from their category.
+   * The library cover, used when the organizer supplies no media of their own:
+   * their choice if they made one, otherwise one picked from their category.
    */
   const chosenCover = useMemo(
     () =>
@@ -237,6 +241,7 @@ export default function CreateEventScreen() {
             event.music?.startAtSeconds !== undefined ? String(event.music.startAtSeconds) : '',
           musicUri: event.music?.uri || '',
           musicFileName: event.music?.fileName || '',
+          musicAttribution: event.music?.attribution || '',
           media: event.media || [],
           // Only a library cover can be restored as a choice. An uploaded
           // photo lives in event.media and takes precedence anyway.
@@ -328,27 +333,30 @@ export default function CreateEventScreen() {
         return;
       }
 
+      // One item, not a gallery: an event has a single background, shown
+      // full-bleed in Discover and blurred behind the card in Cards. A second
+      // photo had nowhere to appear.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images', 'videos'],
         allowsEditing: false,
-        allowsMultipleSelection: true,
+        allowsMultipleSelection: false,
         quality: 0.9,
-        selectionLimit: 5,
       });
 
-      if (result.canceled) return;
+      if (result.canceled || !result.assets?.[0]) return;
 
-      const selectedMedia: EventMedia[] = result.assets.map((asset) => ({
-        uri: asset.uri,
-        type: asset.type === 'video' ? 'video' : 'image',
-        width: asset.width,
-        height: asset.height,
-        durationMs: asset.duration ?? undefined,
-      }));
-
+      const asset = result.assets[0];
       setFormData((prev) => ({
         ...prev,
-        media: [...prev.media, ...selectedMedia].slice(0, 6),
+        media: [
+          {
+            uri: asset.uri,
+            type: asset.type === 'video' ? 'video' : 'image',
+            width: asset.width,
+            height: asset.height,
+            durationMs: asset.duration ?? undefined,
+          },
+        ],
       }));
     } catch (error) {
       console.error('Error selecting media:', error);
@@ -378,6 +386,9 @@ export default function CreateEventScreen() {
         musicFileName: asset.name || 'track',
         // Seed the title from the filename when the field is still empty.
         musicTitle: prev.musicTitle || (asset.name || '').replace(/\.[^.]+$/, ''),
+        // The organizer's own file owes no credit, and keeping the one from a
+        // library track they picked first would credit the wrong person.
+        musicAttribution: '',
       }));
     } catch (error) {
       console.error('Error picking audio:', error);
@@ -386,7 +397,12 @@ export default function CreateEventScreen() {
   };
 
   const removeAudioTrack = () =>
-    setFormData((prev) => ({ ...prev, musicUri: '', musicFileName: '' }));
+    setFormData((prev) => ({
+      ...prev,
+      musicUri: '',
+      musicFileName: '',
+      musicAttribution: '',
+    }));
 
   const removeMedia = (uri: string) => {
     setFormData((prev) => ({
@@ -484,6 +500,7 @@ export default function CreateEventScreen() {
                 : undefined,
             uri: musicUri || undefined,
             fileName: formData.musicFileName || undefined,
+            attribution: formData.musicAttribution.trim() || undefined,
           }
         : undefined;
 
@@ -873,17 +890,16 @@ export default function CreateEventScreen() {
                   {formData.musicFileName || formData.musicTitle || 'Track attached'}
                 </Text>
                 <TouchableOpacity
-                  onPress={() => {
-                    removeAudioTrack();
-                    setMusicCredit(null);
-                  }}
+                  onPress={removeAudioTrack}
                   hitSlop={8}
                 >
                   <Text style={styles.trackRemove}>Remove</Text>
                 </TouchableOpacity>
               </View>
               {/* A CC-BY credit has to travel with the track. */}
-              {!!musicCredit && <Text style={styles.creditNote}>{musicCredit}</Text>}
+              {!!formData.musicAttribution && (
+                <Text style={styles.creditNote}>{formData.musicAttribution}</Text>
+              )}
             </View>
           ) : (
             <View style={styles.inputSpacing}>
@@ -906,68 +922,61 @@ export default function CreateEventScreen() {
         </View>
 
         <View style={styles.formCard}>
-          <Text style={styles.label}>Cover image</Text>
+          <Text style={styles.label}>Event background</Text>
+
           <View style={styles.coverRow}>
-            <Image
-              source={{ uri: coverUrl(chosenCover, 'thumb') }}
-              style={styles.coverPreview}
-              resizeMode="cover"
-            />
+            {backgroundMedia?.type === 'video' ? (
+              // <Image> renders nothing for a video file, so a picked video
+              // previewed as a blank tile.
+              <View style={[styles.coverPreview, styles.videoPreview]}>
+                <Play size={18} color="#ffffff" />
+              </View>
+            ) : (
+              <Image
+                source={{ uri: backgroundMedia?.uri ?? coverUrl(chosenCover, 'thumb') }}
+                style={styles.coverPreview}
+                resizeMode="cover"
+              />
+            )}
+
             <View style={styles.coverCopy}>
               <Text style={styles.coverName} numberOfLines={1}>
-                {formData.coverId ? chosenCover.label : `${chosenCover.label} (picked for you)`}
+                {backgroundMedia
+                  ? backgroundMedia.type === 'video'
+                    ? 'Your video'
+                    : 'Your photo'
+                  : formData.coverId
+                    ? chosenCover.label
+                    : `${chosenCover.label} (picked for you)`}
               </Text>
-              <TouchableOpacity
-                style={styles.ownFileButton}
-                onPress={() => setCoverPickerOpen(true)}
-              >
-                <Text style={styles.ownFileButtonText}>Choose a cover</Text>
-              </TouchableOpacity>
+              {backgroundMedia ? (
+                <TouchableOpacity
+                  style={styles.ownFileButton}
+                  onPress={() => removeMedia(backgroundMedia.uri)}
+                >
+                  <Text style={styles.ownFileButtonText}>Remove</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.ownFileButton}
+                  onPress={() => setCoverPickerOpen(true)}
+                >
+                  <Text style={styles.ownFileButtonText}>Choose a cover</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
-          <Text style={styles.helperText}>
-            A photo you add below is used instead. Otherwise this is the picture people see in
-            Discover.
-          </Text>
-        </View>
 
-        <View style={styles.formCard}>
-          <Text style={styles.label}>Media (photos / videos)</Text>
           <TouchableOpacity style={styles.mediaPickerButton} onPress={pickMediaFromDevice}>
-            <Text style={styles.mediaPickerButtonText}>Choose from device</Text>
+            <Text style={styles.mediaPickerButtonText}>
+              {backgroundMedia ? 'Replace with another' : 'Use my own photo or video'}
+            </Text>
           </TouchableOpacity>
 
-          {formData.media.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaPreviewRow}>
-              {formData.media.map((item) => (
-                <View key={item.uri} style={styles.mediaPreviewItem}>
-                  {item.type === 'video' ? (
-                    // <Image> renders nothing for a video file, so a picked
-                    // video previewed as a blank tile.
-                    <View style={[styles.mediaPreviewImage, styles.videoPreview]}>
-                      <Play size={20} color="#ffffff" />
-                    </View>
-                  ) : (
-                    <Image
-                      source={{ uri: item.uri }}
-                      style={styles.mediaPreviewImage}
-                      resizeMode="cover"
-                    />
-                  )}
-                  <View style={styles.mediaBadge}>
-                    <Text style={styles.mediaBadgeText}>{item.type === 'video' ? 'Video' : 'Photo'}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.removeMediaButton}
-                    onPress={() => removeMedia(item.uri)}
-                  >
-                    <Text style={styles.removeMediaButtonText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-          <Text style={styles.helperText}>{formData.media.length}/6 selected</Text>
+          <Text style={styles.helperText}>
+            One photo or video. It fills the screen in Discover, and sits blurred behind the card
+            in Cards.
+          </Text>
         </View>
 
         {/* Description */}
@@ -997,8 +1006,8 @@ export default function CreateEventScreen() {
             musicFileName: track.title,
             musicTitle: track.title,
             musicArtist: track.artist,
+            musicAttribution: creditLine(track) ?? '',
           }));
-          setMusicCredit(creditLine(track));
         }}
       />
 
@@ -1266,51 +1275,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
-  },
-  mediaPreviewRow: {
-    marginTop: 12,
-  },
-  mediaPreviewItem: {
-    width: 118,
-    height: 118,
-    borderRadius: 12,
-    marginRight: 10,
-    overflow: 'hidden',
-    backgroundColor: '#e5e7eb',
-  },
-  mediaPreviewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  mediaBadge: {
-    position: 'absolute',
-    left: 8,
-    bottom: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  mediaBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  removeMediaButton: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeMediaButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
   },
   typeContainer: {
     flexDirection: 'row',

@@ -10,6 +10,8 @@ import {
 import {
   ArrowLeft,
   Heart,
+  Play,
+  Pause,
   MapPin,
   Users,
   Calendar,
@@ -40,6 +42,8 @@ import Avatar from '../components/Avatar';
 import AttendeeStrip from '../components/AttendeeStrip';
 import { shareEvent } from '../lib/share';
 import { showAlert } from '../lib/alert';
+import EventMediaBackground from '../components/EventMediaBackground';
+import EventAudioPlayer from '../components/EventAudioPlayer';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
@@ -52,6 +56,7 @@ export default function ActivityDetailScreen() {
   const [busy, setBusy] = useState(false);
   const [event, setEvent] = useState<any | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [musicPlaying, setMusicPlaying] = useState(false);
   const [commitment, setCommitment] = useState<UserCommitment | null>(null);
   const [hasRated, setHasRated] = useState(false);
   const [settlingPayment, setSettlingPayment] = useState(false);
@@ -327,6 +332,51 @@ export default function ActivityDetailScreen() {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+        {/*
+          The organizer's photo or video. It was uploaded, stored and shown in
+          the feed, but this screen — the event's own page — never displayed
+          it at all.
+        */}
+        <View style={styles.hero}>
+          <EventMediaBackground event={event} active style={styles.heroMedia} />
+        </View>
+
+        {!!event.music?.uri && (
+          <View style={styles.soundtrack}>
+            <Pressable
+              onPress={() => setMusicPlaying((playing) => !playing)}
+              style={styles.playBtn}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={musicPlaying ? 'Pause the soundtrack' : 'Play the soundtrack'}
+            >
+              {musicPlaying ? (
+                <Pause size={16} color="#ffffff" fill="#ffffff" />
+              ) : (
+                <Play size={16} color="#ffffff" fill="#ffffff" />
+              )}
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.soundtrackTitle} numberOfLines={1}>
+                {event.music.title || 'Soundtrack'}
+              </Text>
+              {!!event.music.artist && (
+                <Text style={styles.soundtrackArtist} numberOfLines={1}>
+                  {event.music.artist}
+                </Text>
+              )}
+              {/* CC-BY obliges us to show this wherever the track plays. */}
+              {!!event.music.attribution && (
+                <Text style={styles.soundtrackCredit} numberOfLines={2}>
+                  {event.music.attribution}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        <EventAudioPlayer music={event.music} muted={false} playing={musicPlaying} />
+
         <Text style={styles.title}>{event.title || 'Untitled Event'}</Text>
 
         {paymentParam === 'cancelled' && !commitment?.paymentStatus && (
@@ -657,6 +707,38 @@ const styles = StyleSheet.create({
   iconBtnNeutral: { backgroundColor: '#f3f4f6' },
   heartIdle: { backgroundColor: '#f3f4f6' },
   heartActive: { backgroundColor: '#fee2e2' },
+
+  hero: {
+    height: 200,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#111827',
+    marginBottom: 12,
+  },
+  heroMedia: { width: '100%', height: '100%', position: 'absolute' },
+
+  soundtrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 4,
+  },
+  playBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soundtrackTitle: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  soundtrackArtist: { fontSize: 12, color: '#6b7280', marginTop: 1 },
+  soundtrackCredit: { fontSize: 10, color: '#9ca3af', marginTop: 3, fontStyle: 'italic' },
 
   title: { textAlign: 'center', fontSize: 22, fontWeight: '700', color: '#111827', marginVertical: 12 },
 
